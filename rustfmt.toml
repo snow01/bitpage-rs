@@ -1,0 +1,6 @@
+comment_width = 140
+max_width = 140
+merge_imports = true
+reorder_impl_items = true
+use_field_init_shorthand = true
+edition = "2018"

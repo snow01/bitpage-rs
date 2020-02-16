@@ -1,0 +1,12 @@
+[package]
+name = "bitpage"
+version = "1.0.0"
+authors = ["Shailendra Sharma <shailendra.sharma@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+lazy_static = "1.4.0"
+itertools = "0.8.2"
+arrayvec = "0.5.1"
+anyhow = "1.0.26"
+bytes = "0.5.4"
