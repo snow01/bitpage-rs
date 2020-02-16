@@ -32,14 +32,26 @@ impl<'a> BooleanOp<'a> {
         })
     }
 
+    pub fn new_owned_leaf_op(bitpage_vec: BitPageVec) -> BooleanOp<'a> {
+        let start_page = bitpage_vec.start_page();
+        let end_page = bitpage_vec.end_page();
+        let iter = bitpage_vec.into_iter();
+
+        BooleanOp::Leaf(BooleanOpLeaf {
+            start_page,
+            end_page,
+            iter,
+        })
+    }
+
     pub fn new_and_op(ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
-        anyhow::ensure!(ops.len() > 1, "For 'and' op minimum 2 sub ops should be there");
+        anyhow::ensure!(!ops.is_empty(), "For 'and' op minimum one sub op should be there");
 
         Ok(BooleanOp::And(ops))
     }
 
     pub fn new_or_op(ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
-        anyhow::ensure!(ops.len() > 1, "For 'or' op minimum 2 sub ops should be there");
+        anyhow::ensure!(!ops.is_empty(), "For 'or' op minimum one sub op should be there");
 
         Ok(BooleanOp::Or(ops))
     }
@@ -205,7 +217,23 @@ impl BitPageVec {
         }
     }
 
+    fn into_iter<'a>(self) -> PageIterator<'a> {
+        match self {
+            BitPageVec::AllZeroes => {
+                let iter = empty::<(usize, BitPage)>();
+                Box::new(iter)
+            }
+            BitPageVec::Sparse(pages) => {
+                let iter = pages
+                    .into_iter()
+                    .map(|BitPageWithPosition { page_idx, bit_page }| (page_idx, bit_page));
+                Box::new(iter)
+            }
+        }
+    }
+
     pub fn or(&mut self, second: &BitPageVec) {
+        // TODO: do case basis
         let pages = self
             .iter()
             .merge_join_by(second.iter(), merge_cmp)
