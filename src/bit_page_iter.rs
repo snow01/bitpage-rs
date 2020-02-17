@@ -34,7 +34,7 @@ impl BitPage {
             BitPage::Some(value) => {
                 let mut byte_masks = Vec::<u8>::with_capacity(NUM_BYTES);
                 for i in 0..NUM_BYTES {
-                    let byte = (value >> i) as u8;
+                    let byte = (value >> (i * 8)) as u8;
                     byte_masks.push(byte);
                 }
 
@@ -78,11 +78,35 @@ fn build_active_bits(mut bit: u8) -> Vec<usize> {
         index += 1;
     }
 
-    bits.iter();
-
     bits
 }
 
 fn active_bits_iter(byte: u8) -> Iter<'static, usize> {
     ACTIVE_BITS[byte as usize].iter()
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+
+    use crate::BitPage;
+
+    #[test]
+    fn test_ops() {
+        println!("ALL ZEROS -- SET BIT");
+
+        for i in 0..64 {
+            let mut bit_page = BitPage::zeroes();
+
+            bit_page.set_bit(i);
+
+            println!(
+                "BitPage[{}] = {:?} ==> {} ==> {:?}",
+                i,
+                bit_page,
+                bit_page.is_bit_set(i),
+                bit_page.active_bits().collect_vec()
+            );
+        }
+    }
 }

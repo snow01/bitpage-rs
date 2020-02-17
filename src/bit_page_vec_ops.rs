@@ -1,3 +1,4 @@
+//use log::{debug, log_enabled, Level};
 use std::cmp::{max, min, Ordering};
 use std::iter::empty;
 
@@ -47,11 +48,15 @@ impl<'a> BooleanOp<'a> {
     pub fn new_and_op(ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
         anyhow::ensure!(!ops.is_empty(), "For 'and' op minimum one sub op should be there");
 
+        // TODO: optimise if only one op
+
         Ok(BooleanOp::And(ops))
     }
 
     pub fn new_or_op(ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
         anyhow::ensure!(!ops.is_empty(), "For 'or' op minimum one sub op should be there");
+
+        // TODO: optimise if only one op
 
         Ok(BooleanOp::Or(ops))
     }

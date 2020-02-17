@@ -12,7 +12,7 @@ impl fmt::Debug for BitPage {
         match &self {
             BitPage::Zeroes => write!(f, "BitPage::AllZeroes"),
             BitPage::Ones => write!(f, "BitPage::AllOnes"),
-            BitPage::Some(value) => write!(f, "BitPage::Some(active={}) ==> {:#64b}", self.count_ones(), value),
+            BitPage::Some(value) => write!(f, "BitPage::Some(active={}) ==> {:b}", self.count_ones(), value),
         }
     }
 }
