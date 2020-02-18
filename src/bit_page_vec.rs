@@ -11,7 +11,7 @@ pub enum BitPageVec {
 #[derive(Clone, Debug)]
 pub struct BitPageWithPosition {
     pub(crate) page_idx: usize,
-    pub(crate) bit_page: BitPage,
+    pub(crate) bit_page: u64,
 }
 
 impl Default for BitPageVec {
@@ -44,9 +44,9 @@ impl BitPageVec {
                 if let Ok(matching_index) = pages.binary_search_by(|probe| probe.page_idx.cmp(&page_idx)) {
                     // clear bit at the matching index
                     let bit_page = &mut pages[matching_index].bit_page;
-                    bit_page.clear_bit(bit_idx);
+                    BitPage::clear_bit(bit_page, bit_idx);
 
-                    if BitPage::Zeroes.eq(bit_page) {
+                    if BitPage::is_zero(bit_page) {
                         // remove this bit page from matching index and compact page
                         pages.remove(matching_index);
                     }
@@ -65,7 +65,7 @@ impl BitPageVec {
         match self {
             BitPageVec::AllZeroes => {
                 let mut bit_page = BitPage::zeroes();
-                bit_page.set_bit(bit_idx);
+                BitPage::set_bit(&mut bit_page, bit_idx);
 
                 *self = BitPageVec::Sparse(vec![BitPageWithPosition { page_idx, bit_page }]);
             }
@@ -75,12 +75,12 @@ impl BitPageVec {
                     Ok(matching_index) => {
                         // set bit at the matching index
                         let bit_page = &mut pages[matching_index].bit_page;
-                        bit_page.set_bit(bit_idx);
+                        BitPage::set_bit(bit_page, bit_idx);
                     }
                     Err(insertion_index) => {
                         // create new page and insert at matching index
                         let mut bit_page = BitPage::zeroes();
-                        bit_page.set_bit(bit_idx);
+                        BitPage::set_bit(&mut bit_page, bit_idx);
 
                         pages.insert(insertion_index, BitPageWithPosition { page_idx, bit_page });
                     }
@@ -95,7 +95,7 @@ impl BitPageVec {
             BitPageVec::AllZeroes => false,
             BitPageVec::Sparse(pages) => {
                 if let Ok(matching_index) = pages.binary_search_by(|probe| probe.page_idx.cmp(&page_idx)) {
-                    return pages[matching_index].bit_page.is_bit_set(bit_idx);
+                    return BitPage::is_bit_set(&pages[matching_index].bit_page, bit_idx);
                 }
 
                 false

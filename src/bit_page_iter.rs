@@ -5,6 +5,7 @@ use arrayvec::ArrayVec;
 
 use crate::bit_page::BitPage;
 
+const MAX_VALUE: u64 = u64::max_value();
 pub const MAX_BITS: usize = 64;
 pub const NUM_BYTES: usize = MAX_BITS / 8;
 
@@ -27,11 +28,11 @@ impl<'a> Iterator for BitPageIterator {
 }
 
 impl BitPage {
-    pub fn active_bits(&self) -> BitPageIterator {
-        match self {
-            BitPage::Zeroes => BitPageIterator::AllZeroes,
-            BitPage::Ones => BitPageIterator::AllOnes { range: (0..MAX_BITS) },
-            BitPage::Some(value) => {
+    pub fn active_bits(value: &u64) -> BitPageIterator {
+        match value {
+            0 => BitPageIterator::AllZeroes,
+            &MAX_VALUE => BitPageIterator::AllOnes { range: (0..MAX_BITS) },
+            _ => {
                 let mut byte_masks = Vec::<u8>::with_capacity(NUM_BYTES);
                 for i in 0..NUM_BYTES {
                     let byte = (value >> (i * 8)) as u8;
@@ -98,14 +99,14 @@ mod tests {
         for i in 0..64 {
             let mut bit_page = BitPage::zeroes();
 
-            bit_page.set_bit(i);
+            BitPage::set_bit(&mut bit_page, i);
 
             println!(
                 "BitPage[{}] = {:?} ==> {} ==> {:?}",
                 i,
                 bit_page,
-                bit_page.is_bit_set(i),
-                bit_page.active_bits().collect_vec()
+                BitPage::is_bit_set(&bit_page, i),
+                BitPage::active_bits(&bit_page).collect_vec()
             );
         }
     }

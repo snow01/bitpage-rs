@@ -2,26 +2,30 @@ use bytes::{Buf, BufMut};
 
 use crate::BitPage;
 
+// TODO: this is for backward compatibility of indices... as they gets changed... we can only encode u64 directly
+
+const MAX_VALUE: u64 = u64::max_value();
+
 impl BitPage {
-    pub fn encode<W>(&self, buf: &mut W)
+    pub fn encode<W>(value: u64, buf: &mut W)
     where
         W: BufMut,
     {
-        match self {
-            BitPage::Zeroes => {
+        match value {
+            0 => {
                 buf.put_u8(0);
             }
-            BitPage::Ones => {
+            MAX_VALUE => {
                 buf.put_u8(1);
             }
-            BitPage::Some(value) => {
+            _ => {
                 buf.put_u8(2);
-                buf.put_u64(*value);
+                buf.put_u64(value);
             }
         }
     }
 
-    pub fn decode<R>(buf: &mut R) -> anyhow::Result<BitPage>
+    pub fn decode<R>(buf: &mut R) -> anyhow::Result<u64>
     where
         R: Buf,
     {
@@ -29,13 +33,13 @@ impl BitPage {
 
         let t = buf.get_u8();
         if t == 0 {
-            Ok(BitPage::Zeroes)
+            Ok(0)
         } else if t == 1 {
-            Ok(BitPage::Ones)
+            Ok(MAX_VALUE)
         } else {
             anyhow::ensure!(buf.remaining() >= 8, "No more bytes remaining to decode to BitPage value");
             let value = buf.get_u64();
-            Ok(BitPage::Some(value))
+            Ok(value)
         }
     }
 }

@@ -1,101 +1,43 @@
-use std::fmt;
+pub struct BitPage;
 
-#[derive(Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub enum BitPage {
-    Zeroes,
-    Ones,
-    Some(u64),
-}
-
-impl fmt::Debug for BitPage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
-        match &self {
-            BitPage::Zeroes => write!(f, "BitPage::AllZeroes"),
-            BitPage::Ones => write!(f, "BitPage::AllOnes"),
-            BitPage::Some(value) => write!(f, "BitPage::Some(active={}) ==> {:b}", self.count_ones(), value),
-        }
-    }
-}
-
-impl Default for BitPage {
-    fn default() -> Self {
-        BitPage::zeroes()
-    }
-}
+const ZERO: u64 = 0 as u64;
 
 impl BitPage {
     #[inline]
-    pub fn zeroes() -> BitPage {
-        BitPage::Zeroes
+    pub fn zeroes() -> u64 {
+        0
     }
 
     #[inline]
-    pub fn ones() -> BitPage {
-        BitPage::Ones
+    pub fn ones() -> u64 {
+        u64::max_value()
     }
 
     #[inline]
-    pub fn clear_bit(&mut self, bit_idx: usize) {
-        match self {
-            BitPage::Zeroes => {
-                // no-op
-            }
-            BitPage::Ones => {
-                let value = !get_mask(bit_idx);
-
-                *self = BitPage::Some(value)
-            }
-            BitPage::Some(value) => {
-                *value &= !get_mask(bit_idx);
-
-                // compact BitPage
-                if 0.eq(value) {
-                    *self = BitPage::Zeroes;
-                }
-            }
-        }
+    pub fn clear_bit(value: &mut u64, bit_idx: usize) {
+        *value &= !get_mask(bit_idx);
     }
 
     #[inline]
-    pub fn set_bit(&mut self, bit_idx: usize) {
-        match self {
-            BitPage::Zeroes => {
-                let value = get_mask(bit_idx);
-                *self = BitPage::Some(value)
-            }
-            BitPage::Ones => {
-                // no-op
-            }
-            BitPage::Some(value) => {
-                *value |= get_mask(bit_idx);
-
-                // compact BitPage
-                if u64::max_value().eq(value) {
-                    *self = BitPage::Ones;
-                }
-            }
-        }
+    pub fn set_bit(value: &mut u64, bit_idx: usize) {
+        *value |= get_mask(bit_idx);
     }
 
     #[inline]
-    pub fn is_bit_set(&self, bit_idx: usize) -> bool {
-        match self {
-            BitPage::Zeroes => false,
-            BitPage::Ones => true,
-            BitPage::Some(value) => {
-                let value_mask = get_mask(bit_idx);
+    pub fn is_bit_set(value: &u64, bit_idx: usize) -> bool {
+        let value_mask = get_mask(bit_idx);
 
-                value & value_mask > 0
-            }
-        }
+        value & value_mask > 0
     }
 
-    pub fn count_ones(&self) -> u32 {
-        match self {
-            BitPage::Zeroes => 0,
-            BitPage::Ones => 64,
-            BitPage::Some(value) => value.count_ones(),
-        }
+    #[inline]
+    pub fn count_ones(value: &u64) -> u32 {
+        value.count_ones()
+    }
+
+    #[inline]
+    pub fn is_zero(value: &u64) -> bool {
+        ZERO.eq(value)
     }
 }
 
@@ -121,48 +63,4 @@ fn get_mask(bit_idx: usize) -> u64 {
 
 lazy_static! {
     static ref MASKS: [u64; 64] = masks_inner();
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::bit_page::BitPage;
-
-    #[test]
-    fn test_ops() {
-        println!("ALL ONES -- CLEAR BIT");
-        let mut bit_page = BitPage::ones();
-
-        for i in 0..64 {
-            bit_page.clear_bit(i);
-
-            println!("BitPage[{}] = {:?}", i, bit_page);
-        }
-
-        println!("ALL ONES -- SET BIT");
-        let mut bit_page = BitPage::ones();
-
-        for i in 0..64 {
-            bit_page.set_bit(i);
-
-            println!("BitPage[{}] = {:?}", i, bit_page);
-        }
-
-        println!("ALL ZEROS -- CLEAR BIT");
-        let mut bit_page = BitPage::zeroes();
-
-        for i in 0..64 {
-            bit_page.clear_bit(i);
-
-            println!("BitPage[{}] = {:?} ==> {}", i, bit_page, bit_page.is_bit_set(i));
-        }
-
-        println!("ALL ZEROS -- SET BIT");
-        let mut bit_page = BitPage::zeroes();
-
-        for i in 0..64 {
-            bit_page.set_bit(i);
-
-            println!("BitPage[{}] = {:?} ==> {}", i, bit_page, bit_page.is_bit_set(i));
-        }
-    }
 }

@@ -73,15 +73,15 @@ impl<'a> BooleanOp<'a> {
                     start_page_inner = max(start_page_inner, leaf.start_page);
                     end_page_inner = min(start_page_inner, leaf.end_page);
 
-                    if leaf.len == 0 {
-                        // short-circuit here
-                        return BooleanOpResult {
-                            start_page: 0,
-                            end_page: 0,
-                            len: 0,
-                            iter: Box::new(empty()),
-                        };
-                    }
+                    //                    if leaf.len == 0 {
+                    //                        // short-circuit here
+                    //                        return BooleanOpResult {
+                    //                            start_page: 0,
+                    //                            end_page: 0,
+                    //                            len: 0,
+                    //                            iter: Box::new(empty()),
+                    //                        };
+                    //                    }
 
                     leaves.push(leaf);
                 }
@@ -192,7 +192,7 @@ impl<'a> BooleanOpResult<'a> {
         let pages = self
             .iter
             .filter_map(|(page_idx, bit_page)| {
-                if bit_page.is_all_zeros() {
+                if BitPage::is_zero(&bit_page) {
                     None
                 } else {
                     Some(BitPageWithPosition {
@@ -223,9 +223,9 @@ impl<'a> BooleanOpResult<'a> {
                     None
                 }
                 EitherOrBoth::Both(_, (page_idx_2, mut bit_page)) => {
-                    bit_page.to_mut().not();
+                    *bit_page.to_mut() = !*bit_page;
 
-                    if BitPage::Zeroes.eq(&bit_page) {
+                    if BitPage::is_zero(&bit_page) {
                         None
                     } else {
                         Some((page_idx_2, bit_page))
@@ -242,7 +242,7 @@ impl<'a> BooleanOpResult<'a> {
     }
 }
 
-pub type PageItem<'a> = (Cow<'a, usize>, Cow<'a, BitPage>);
+pub type PageItem<'a> = (Cow<'a, usize>, Cow<'a, u64>);
 pub type PageIterator<'a> = Box<dyn Iterator<Item = PageItem<'a>> + 'a>;
 
 impl BitPageVec {
@@ -313,14 +313,14 @@ impl BitPageVec {
             .merge_join_by(self.iter(), |idx_1, (idx_2, _)| idx_1.cmp(idx_2))
             .filter_map(|either| match either {
                 EitherOrBoth::Both(_, (page_idx, mut bit_page)) => {
-                    bit_page.to_mut().not();
-                    if BitPage::Zeroes.eq(&bit_page) {
+                    *bit_page.to_mut() = !*bit_page;
+                    if BitPage::is_zero(&bit_page) {
                         None
                     } else {
                         Some((page_idx, bit_page))
                     }
                 }
-                EitherOrBoth::Left(page_idx) => Some((Cow::Owned(page_idx), Cow::Owned(BitPage::Ones))),
+                EitherOrBoth::Left(page_idx) => Some((Cow::Owned(page_idx), Cow::Owned(BitPage::ones()))),
                 EitherOrBoth::Right(_) => None,
             })
             .map(|(page_idx, bit_page)| BitPageWithPosition {
@@ -345,9 +345,9 @@ fn merge_cmp((idx_1, _): &PageItem<'_>, (idx_2, _): &PageItem<'_>) -> Ordering {
 fn and_merge_iter<'a>(either: EitherOrBoth<PageItem<'a>, PageItem<'a>>) -> Option<PageItem<'a>> {
     match either {
         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
-            page_one.to_mut().and(&page_two);
+            *page_one.to_mut() &= !*page_two;
 
-            if BitPage::Zeroes.eq(&page_one) {
+            if BitPage::is_zero(&page_one) {
                 None
             } else {
                 Some((idx_1, page_one))
@@ -361,7 +361,7 @@ fn and_merge_iter<'a>(either: EitherOrBoth<PageItem<'a>, PageItem<'a>>) -> Optio
 fn or_merge_iter<'a>(either: EitherOrBoth<PageItem<'a>, PageItem<'a>>) -> PageItem<'a> {
     match either {
         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
-            page_one.to_mut().or(&page_two);
+            *page_one.to_mut() |= !*page_two;
             (idx_1, page_one)
         }
         EitherOrBoth::Left((idx, page)) => (idx, page),

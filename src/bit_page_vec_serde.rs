@@ -22,7 +22,9 @@ impl BitPageVec {
 
                 for page in pages {
                     buf.put_u64(page.page_idx as u64);
-                    page.bit_page.encode(buf);
+
+                    // depending on the value encode here...
+                    BitPage::encode(page.bit_page, buf);
                 }
             }
         }
@@ -48,6 +50,7 @@ impl BitPageVec {
                 anyhow::ensure!(buf.remaining() >= 8, "BitPageVec: No more bytes remaining to decode pages length");
 
                 let page_idx = buf.get_u64() as usize;
+
                 let bit_page = BitPage::decode(buf)?;
 
                 pages.push(BitPageWithPosition { page_idx, bit_page });

@@ -9,7 +9,6 @@ pub use bit_page_vec_ops::{BooleanOp, BooleanOpResult};
 // bit page and its associated modules
 mod bit_page;
 mod bit_page_iter;
-mod bit_page_ops;
 mod bit_page_serde;
 
 // bit page vector and its associated modules
