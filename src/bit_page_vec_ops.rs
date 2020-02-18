@@ -19,6 +19,7 @@ pub enum BooleanOp<'a> {
 pub struct BooleanOpResult<'a> {
     start_page: usize,
     end_page: usize,
+    len: usize,
     iter: PageIterator<'a>,
 }
 
@@ -62,27 +63,41 @@ impl<'a> BooleanOp<'a> {
             BooleanOp::And(ops) => {
                 // find max of start_page
                 // find min of end_page
-                let mut start_page_inner = max(usize::min_value(), start_page);
-                let mut end_page_inner = min(usize::max_value(), end_page);
+                let mut start_page_inner = start_page;
+                let mut end_page_inner = end_page;
+
+                let mut leaves = Vec::with_capacity(ops.len());
+
+                for op in ops {
+                    let leaf = op.evaluate(start_page_inner, end_page_inner);
+                    start_page_inner = max(start_page_inner, leaf.start_page);
+                    end_page_inner = min(start_page_inner, leaf.end_page);
+
+                    if leaf.len == 0 {
+                        // short-circuit here
+                        return BooleanOpResult {
+                            start_page: 0,
+                            end_page: 0,
+                            len: 0,
+                            iter: Box::new(empty()),
+                        };
+                    }
+
+                    leaves.push(leaf);
+                }
 
                 // merge results
-                let leaves = ops
-                    .into_iter()
-                    .map(|op| {
-                        let leaf = op.evaluate(start_page, end_page);
-                        start_page_inner = max(start_page_inner, leaf.start_page);
-                        end_page_inner = min(start_page_inner, leaf.end_page);
-                        leaf
-                    })
-                    .collect_vec();
+                if leaves.len() > 1 {
+                    leaves.sort_unstable_by(|leaf_1, leaf_2| leaf_1.len.cmp(&leaf_2.len));
+                }
 
                 Self::and_merge_leaves(leaves, start_page_inner, end_page_inner)
             }
             BooleanOp::Or(ops) => {
                 // find min of start_page
                 // find max of end_page
-                let mut start_page_inner = min(usize::max_value(), start_page);
-                let mut end_page_inner = max(usize::min_value(), end_page);
+                let mut start_page_inner = start_page;
+                let mut end_page_inner = end_page;
 
                 // merge results
                 let leaves = ops
@@ -99,20 +114,24 @@ impl<'a> BooleanOp<'a> {
             }
             BooleanOp::Not(op) => op.evaluate(start_page, end_page).not(start_page, end_page),
             BooleanOp::BorrowedLeaf(leaf) => {
+                // TODO: limit iter as per start_page and end_page parameter
                 let start_page = leaf.start_page();
                 let end_page = leaf.end_page();
                 BooleanOpResult {
                     start_page,
                     end_page,
+                    len: leaf.len(),
                     iter: leaf.iter(),
                 }
             }
             BooleanOp::OwnedLeaf(leaf) => {
+                // TODO: limit iter as per start_page and end_page parameter
                 let start_page = leaf.start_page();
                 let end_page = leaf.end_page();
                 BooleanOpResult {
                     start_page,
                     end_page,
+                    len: leaf.len(),
                     iter: leaf.into_iter(),
                 }
             }
@@ -138,6 +157,7 @@ impl<'a> BooleanOp<'a> {
         BooleanOpResult {
             start_page,
             end_page,
+            len: (end_page - start_page),
             iter: iter.unwrap(),
         }
     }
@@ -161,6 +181,7 @@ impl<'a> BooleanOp<'a> {
         BooleanOpResult {
             start_page,
             end_page,
+            len: (end_page - start_page),
             iter: iter.unwrap(),
         }
     }
@@ -215,6 +236,7 @@ impl<'a> BooleanOpResult<'a> {
         BooleanOpResult {
             start_page,
             end_page,
+            len: (end_page - start_page),
             iter: Box::new(iter),
         }
     }
