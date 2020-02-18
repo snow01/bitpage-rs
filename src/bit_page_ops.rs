@@ -19,7 +19,12 @@ impl BitPage {
 
             (_, BitPage::Zeroes) => *self = BitPage::Zeroes,
             (BitPage::Ones, _) => *self = second.clone(),
-            (BitPage::Some(value_1), BitPage::Some(value_2)) => *value_1 &= value_2,
+            (BitPage::Some(value_1), BitPage::Some(value_2)) => {
+                *value_1 &= value_2;
+                if 0.eq(value_1) {
+                    *self = BitPage::Zeroes;
+                }
+            }
             #[allow(unreachable_patterns)]
             _ => {}
         }
@@ -33,7 +38,12 @@ impl BitPage {
             }
             (_, BitPage::Ones) => *self = BitPage::Ones,
             (BitPage::Zeroes, _) => *self = second.clone(),
-            (BitPage::Some(value_1), BitPage::Some(value_2)) => *value_1 |= value_2,
+            (BitPage::Some(value_1), BitPage::Some(value_2)) => {
+                *value_1 |= value_2;
+                if u64::max_value().eq(value_1) {
+                    *self = BitPage::Ones;
+                }
+            }
             #[allow(unreachable_patterns)]
             _ => {}
         }

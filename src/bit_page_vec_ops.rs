@@ -1,4 +1,3 @@
-//use log::{debug, log_enabled, Level};
 use std::cmp::{max, min, Ordering};
 use std::iter::empty;
 
@@ -45,20 +44,26 @@ impl<'a> BooleanOp<'a> {
         })
     }
 
-    pub fn new_and_op(ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
+    pub fn new_and_op(mut ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
         anyhow::ensure!(!ops.is_empty(), "For 'and' op minimum one sub op should be there");
 
-        // TODO: optimise if only one op
-
-        Ok(BooleanOp::And(ops))
+        if ops.len() == 1 {
+            // simplify AND with single op
+            Ok(ops.pop().unwrap())
+        } else {
+            Ok(BooleanOp::And(ops))
+        }
     }
 
-    pub fn new_or_op(ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
+    pub fn new_or_op(mut ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
         anyhow::ensure!(!ops.is_empty(), "For 'or' op minimum one sub op should be there");
 
-        // TODO: optimise if only one op
-
-        Ok(BooleanOp::Or(ops))
+        if ops.len() == 1 {
+            // simplify OR with single op
+            Ok(ops.pop().unwrap())
+        } else {
+            Ok(BooleanOp::Or(ops))
+        }
     }
 
     pub fn new_not_op(op: BooleanOp<'a>) -> BooleanOp<'a> {
@@ -89,7 +94,6 @@ impl<'a> BooleanOp<'a> {
             BooleanOp::Or(ops) => {
                 // find min of start_page
                 // find max of end_page
-
                 let mut start_page_inner = min(usize::max_value(), start_page);
                 let mut end_page_inner = max(usize::min_value(), end_page);
 
@@ -192,7 +196,12 @@ impl<'a> BooleanOpLeaf<'a> {
                 }
                 EitherOrBoth::Both(_, (page_idx_2, mut bit_page)) => {
                     bit_page.not();
-                    Some((page_idx_2, bit_page))
+
+                    if bit_page == BitPage::Zeroes {
+                        None
+                    } else {
+                        Some((page_idx_2, bit_page))
+                    }
                 }
             });
 
@@ -238,7 +247,6 @@ impl BitPageVec {
     }
 
     pub fn or(&mut self, second: &BitPageVec) {
-        // TODO: do case basis
         let pages = self
             .iter()
             .merge_join_by(second.iter(), merge_cmp)
@@ -248,6 +256,46 @@ impl BitPageVec {
 
         *self = BitPageVec::Sparse(pages)
     }
+
+    pub fn and(&mut self, second: &BitPageVec) {
+        let pages = self
+            .iter()
+            .merge_join_by(second.iter(), merge_cmp)
+            .filter_map(and_merge_iter)
+            .map(|(page_idx, bit_page)| BitPageWithPosition { page_idx, bit_page })
+            .collect_vec();
+
+        if pages.is_empty() {
+            *self = BitPageVec::all_zeros()
+        } else {
+            *self = BitPageVec::Sparse(pages)
+        }
+    }
+
+    pub fn not(&mut self, num_pages: usize) {
+        let pages = (0..=num_pages)
+            .merge_join_by(self.iter(), |idx_1, (idx_2, _)| idx_1.cmp(idx_2))
+            .filter_map(|either| match either {
+                EitherOrBoth::Both(_, (page_idx, mut bit_page)) => {
+                    bit_page.not();
+                    if bit_page == BitPage::Zeroes {
+                        None
+                    } else {
+                        Some((page_idx, bit_page))
+                    }
+                }
+                EitherOrBoth::Left(page_idx) => Some((page_idx, BitPage::Ones)),
+                EitherOrBoth::Right(_) => None,
+            })
+            .map(|(page_idx, bit_page)| BitPageWithPosition { page_idx, bit_page })
+            .collect_vec();
+
+        if pages.is_empty() {
+            *self = BitPageVec::all_zeros()
+        } else {
+            *self = BitPageVec::Sparse(pages)
+        }
+    }
 }
 
 fn merge_cmp((idx_1, _): &(usize, BitPage), (idx_2, _): &(usize, BitPage)) -> Ordering {
@@ -255,18 +303,23 @@ fn merge_cmp((idx_1, _): &(usize, BitPage), (idx_2, _): &(usize, BitPage)) -> Or
 }
 
 #[inline]
-fn and_merge_iter<'a>(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> Option<(usize, BitPage)> {
+fn and_merge_iter(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> Option<(usize, BitPage)> {
     match either {
         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
             page_one.and(&page_two);
-            Some((idx_1, page_one))
+
+            if page_one == BitPage::Zeroes {
+                None
+            } else {
+                Some((idx_1, page_one))
+            }
         }
         EitherOrBoth::Left(_) | EitherOrBoth::Right(_) => None,
     }
 }
 
 #[inline]
-fn or_merge_iter<'a>(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> (usize, BitPage) {
+fn or_merge_iter(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> (usize, BitPage) {
     match either {
         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
             page_one.or(&page_two);
