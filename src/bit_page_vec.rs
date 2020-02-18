@@ -27,6 +27,13 @@ impl BitPageVec {
     }
 
     #[inline]
+    pub fn all_ones(num_pages: usize) -> BitPageVec {
+        let mut bit_page = BitPageVec::AllZeroes;
+        bit_page.not(num_pages);
+        bit_page
+    }
+
+    #[inline]
     pub fn clear_bit(&mut self, page_idx: usize, bit_idx: usize) {
         match self {
             BitPageVec::AllZeroes => {
