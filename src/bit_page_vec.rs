@@ -145,12 +145,11 @@ impl fmt::Debug for BitPageVec {
             BitPageVec::AllZeroes => write!(f, "BitPageVec::AllZeroes"),
             BitPageVec::Sparse(pages) => write!(
                 f,
-                "BitPageVec::Sparse(len={}, active_bits={}, start_page={}, end_page={}, pages={:?})",
+                "BitPageVec::Sparse(len={}, active_bits={}, start_page={}, end_page={}",
                 self.len(),
                 self.count_ones(),
                 self.start_page(),
-                self.end_page(),
-                pages
+                self.end_page()
             ),
         }
     }

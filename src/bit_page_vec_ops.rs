@@ -1,7 +1,9 @@
 use std::cmp::{max, min, Ordering};
 use std::iter::empty;
+use std::time::Instant;
 
 use itertools::{EitherOrBoth, Itertools};
+use log::{debug, log_enabled, Level};
 
 use crate::bit_page_vec::BitPageWithPosition;
 use crate::{BitPage, BitPageVec};
@@ -65,6 +67,10 @@ impl<'a> BooleanOp<'a> {
                 let mut start_page_inner = max(usize::min_value(), start_page);
                 let mut end_page_inner = min(usize::max_value(), end_page);
 
+                if log_enabled!(target: "search_time_taken", Level::Debug) {
+                    debug!(target: "search_time_taken", "start_page={}, start_page_inner={}, end_page={}, end_page_inner={}", start_page, start_page_inner, end_page, end_page_inner);
+                }
+
                 // merge results
                 let leaves = ops
                     .into_iter()
@@ -72,6 +78,11 @@ impl<'a> BooleanOp<'a> {
                         let leaf = op.evaluate(start_page, end_page);
                         start_page_inner = max(start_page_inner, leaf.start_page);
                         end_page_inner = min(start_page_inner, leaf.end_page);
+
+                        if log_enabled!(target: "search_time_taken", Level::Debug) {
+                            debug!(target: "search_time_taken", "leaf start_page={}, start_page_inner={}, end_page={}, end_page_inner={}", leaf.start_page, start_page_inner, leaf.end_page, end_page_inner);
+                        }
+
                         leaf
                     })
                     .collect_vec();
@@ -174,6 +185,11 @@ impl<'a> BooleanOp<'a> {
 
 impl<'a> BooleanOpResult<'a> {
     pub fn convert_to_bit_page_vec(self) -> BitPageVec {
+        let instant = Instant::now();
+        if log_enabled!(target: "search_time_taken", Level::Debug) {
+            debug!(target: "search_time_taken", "convert_to_bit_page_vec: start_page={}, end_page={}, len={}", self.start_page, self.end_page, self.len);
+        }
+
         let pages = self
             .iter
             .filter_map(|(page_idx, bit_page)| {
@@ -184,6 +200,10 @@ impl<'a> BooleanOpResult<'a> {
                 }
             })
             .collect_vec();
+
+        if log_enabled!(target: "search_time_taken", Level::Debug) {
+            debug!(target: "search_time_taken", "convert_to_bit_page_vec: time taken={:?}", instant.elapsed());
+        }
 
         if pages.is_empty() {
             BitPageVec::AllZeroes
