@@ -62,33 +62,19 @@ impl<'a> BooleanOp<'a> {
             BooleanOp::And(ops) => {
                 // find max of start_page
                 // find min of end_page
-                let mut start_page_inner = start_page;
-                let mut end_page_inner = end_page;
-
-                let mut leaves = Vec::with_capacity(ops.len());
-
-                for op in ops {
-                    let leaf = op.evaluate(start_page_inner, end_page_inner);
-                    start_page_inner = max(start_page_inner, leaf.start_page);
-                    end_page_inner = min(start_page_inner, leaf.end_page);
-
-                    //                    if leaf.len == 0 {
-                    //                        // short-circuit here
-                    //                        return BooleanOpResult {
-                    //                            start_page: 0,
-                    //                            end_page: 0,
-                    //                            len: 0,
-                    //                            iter: Box::new(empty()),
-                    //                        };
-                    //                    }
-
-                    leaves.push(leaf);
-                }
+                let mut start_page_inner = max(usize::min_value(), start_page);
+                let mut end_page_inner = min(usize::max_value(), end_page);
 
                 // merge results
-                if leaves.len() > 1 {
-                    leaves.sort_unstable_by(|leaf_1, leaf_2| leaf_1.len.cmp(&leaf_2.len));
-                }
+                let leaves = ops
+                    .into_iter()
+                    .map(|op| {
+                        let leaf = op.evaluate(start_page, end_page);
+                        start_page_inner = max(start_page_inner, leaf.start_page);
+                        end_page_inner = min(start_page_inner, leaf.end_page);
+                        leaf
+                    })
+                    .collect_vec();
 
                 Self::and_merge_leaves(leaves, start_page_inner, end_page_inner)
             }
