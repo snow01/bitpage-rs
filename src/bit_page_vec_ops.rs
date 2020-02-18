@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cmp::{max, min, Ordering};
 use std::iter::empty;
 
@@ -6,42 +7,28 @@ use itertools::{EitherOrBoth, Itertools};
 use crate::bit_page_vec::BitPageWithPosition;
 use crate::{BitPage, BitPageVec};
 
+#[derive(Clone, Debug)]
 pub enum BooleanOp<'a> {
     And(Vec<BooleanOp<'a>>),
     Or(Vec<BooleanOp<'a>>),
     Not(Box<BooleanOp<'a>>),
-    Leaf(BooleanOpLeaf<'a>),
+    BorrowedLeaf(&'a BitPageVec),
+    OwnedLeaf(BitPageVec),
 }
 
-pub struct BooleanOpLeaf<'a> {
+pub struct BooleanOpResult<'a> {
     start_page: usize,
     end_page: usize,
     iter: PageIterator<'a>,
 }
 
 impl<'a> BooleanOp<'a> {
-    pub fn new_leaf_op(bitpage_vec: &'a BitPageVec) -> BooleanOp<'a> {
-        let start_page = bitpage_vec.start_page();
-        let end_page = bitpage_vec.end_page();
-        let iter = bitpage_vec.iter();
-
-        BooleanOp::Leaf(BooleanOpLeaf {
-            start_page,
-            end_page,
-            iter,
-        })
+    pub fn new_leaf_op(bit_page_vec: &'a BitPageVec) -> BooleanOp<'a> {
+        BooleanOp::BorrowedLeaf(bit_page_vec)
     }
 
-    pub fn new_owned_leaf_op(bitpage_vec: BitPageVec) -> BooleanOp<'a> {
-        let start_page = bitpage_vec.start_page();
-        let end_page = bitpage_vec.end_page();
-        let iter = bitpage_vec.into_iter();
-
-        BooleanOp::Leaf(BooleanOpLeaf {
-            start_page,
-            end_page,
-            iter,
-        })
+    pub fn new_owned_leaf_op(bit_page_vec: BitPageVec) -> BooleanOp<'a> {
+        BooleanOp::OwnedLeaf(bit_page_vec)
     }
 
     pub fn new_and_op(mut ops: Vec<BooleanOp<'a>>) -> anyhow::Result<BooleanOp<'a>> {
@@ -70,7 +57,7 @@ impl<'a> BooleanOp<'a> {
         BooleanOp::Not(Box::new(op))
     }
 
-    pub fn evaluate(self, start_page: usize, end_page: usize) -> BooleanOpLeaf<'a> {
+    pub fn evaluate(self, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
         match self {
             BooleanOp::And(ops) => {
                 // find max of start_page
@@ -111,11 +98,28 @@ impl<'a> BooleanOp<'a> {
                 Self::or_merge_leaves(leaves, start_page_inner, end_page_inner)
             }
             BooleanOp::Not(op) => op.evaluate(start_page, end_page).not(start_page, end_page),
-            BooleanOp::Leaf(leaf) => leaf,
+            BooleanOp::BorrowedLeaf(leaf) => {
+                let start_page = leaf.start_page();
+                let end_page = leaf.end_page();
+                BooleanOpResult {
+                    start_page,
+                    end_page,
+                    iter: leaf.iter(),
+                }
+            }
+            BooleanOp::OwnedLeaf(leaf) => {
+                let start_page = leaf.start_page();
+                let end_page = leaf.end_page();
+                BooleanOpResult {
+                    start_page,
+                    end_page,
+                    iter: leaf.into_iter(),
+                }
+            }
         }
     }
 
-    fn and_merge_leaves(mut leaves: Vec<BooleanOpLeaf<'a>>, start_page: usize, end_page: usize) -> BooleanOpLeaf<'a> {
+    fn and_merge_leaves(mut leaves: Vec<BooleanOpResult<'a>>, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
         let mut iter: Option<PageIterator<'a>> = None;
 
         for leaf in leaves.drain(..) {
@@ -131,14 +135,14 @@ impl<'a> BooleanOp<'a> {
             }
         }
 
-        BooleanOpLeaf {
+        BooleanOpResult {
             start_page,
             end_page,
             iter: iter.unwrap(),
         }
     }
 
-    fn or_merge_leaves(mut leaves: Vec<BooleanOpLeaf<'a>>, start_page: usize, end_page: usize) -> BooleanOpLeaf<'a> {
+    fn or_merge_leaves(mut leaves: Vec<BooleanOpResult<'a>>, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
         let mut iter: Option<PageIterator<'a>> = None;
 
         for leaf in leaves.drain(..) {
@@ -154,7 +158,7 @@ impl<'a> BooleanOp<'a> {
             }
         }
 
-        BooleanOpLeaf {
+        BooleanOpResult {
             start_page,
             end_page,
             iter: iter.unwrap(),
@@ -162,7 +166,7 @@ impl<'a> BooleanOp<'a> {
     }
 }
 
-impl<'a> BooleanOpLeaf<'a> {
+impl<'a> BooleanOpResult<'a> {
     pub fn convert_to_bit_page_vec(self) -> BitPageVec {
         let pages = self
             .iter
@@ -170,7 +174,10 @@ impl<'a> BooleanOpLeaf<'a> {
                 if bit_page.is_all_zeros() {
                     None
                 } else {
-                    Some(BitPageWithPosition { page_idx, bit_page })
+                    Some(BitPageWithPosition {
+                        page_idx: page_idx.into_owned(),
+                        bit_page: bit_page.into_owned(),
+                    })
                 }
             })
             .collect_vec();
@@ -182,22 +189,22 @@ impl<'a> BooleanOpLeaf<'a> {
         }
     }
 
-    fn not(self, start_page: usize, end_page: usize) -> BooleanOpLeaf<'a> {
+    fn not(self, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
         let iter = (start_page..end_page)
             .merge_join_by(self.iter, |page_idx_1, (page_idx_2, _)| page_idx_1.cmp(page_idx_2))
             .filter_map(|either| match either {
                 EitherOrBoth::Left(page) => {
                     // create a new page with ones and return...
-                    Some((page, BitPage::ones()))
+                    Some((Cow::Owned(page), Cow::Owned(BitPage::ones())))
                 }
                 EitherOrBoth::Right(_) => {
                     // should be ignored
                     None
                 }
                 EitherOrBoth::Both(_, (page_idx_2, mut bit_page)) => {
-                    bit_page.not();
+                    bit_page.to_mut().not();
 
-                    if bit_page == BitPage::Zeroes {
+                    if BitPage::Zeroes.eq(&bit_page) {
                         None
                     } else {
                         Some((page_idx_2, bit_page))
@@ -205,7 +212,7 @@ impl<'a> BooleanOpLeaf<'a> {
                 }
             });
 
-        BooleanOpLeaf {
+        BooleanOpResult {
             start_page,
             end_page,
             iter: Box::new(iter),
@@ -213,19 +220,20 @@ impl<'a> BooleanOpLeaf<'a> {
     }
 }
 
-pub type PageIterator<'a> = Box<dyn Iterator<Item = (usize, BitPage)> + 'a>;
+pub type PageItem<'a> = (Cow<'a, usize>, Cow<'a, BitPage>);
+pub type PageIterator<'a> = Box<dyn Iterator<Item = PageItem<'a>> + 'a>;
 
 impl BitPageVec {
-    fn iter(&self) -> PageIterator {
+    fn iter<'a>(&'a self) -> PageIterator<'a> {
         match self {
             BitPageVec::AllZeroes => {
-                let iter = empty::<(usize, BitPage)>();
+                let iter = empty::<PageItem<'a>>();
                 Box::new(iter)
             }
             BitPageVec::Sparse(pages) => {
                 let iter = pages
                     .iter()
-                    .map(|BitPageWithPosition { page_idx, bit_page }| (*page_idx, bit_page.clone()));
+                    .map(|BitPageWithPosition { page_idx, bit_page }| (Cow::Borrowed(page_idx), Cow::Borrowed(bit_page)));
                 Box::new(iter)
             }
         }
@@ -234,13 +242,13 @@ impl BitPageVec {
     fn into_iter<'a>(self) -> PageIterator<'a> {
         match self {
             BitPageVec::AllZeroes => {
-                let iter = empty::<(usize, BitPage)>();
+                let iter = empty::<PageItem<'a>>();
                 Box::new(iter)
             }
             BitPageVec::Sparse(pages) => {
                 let iter = pages
                     .into_iter()
-                    .map(|BitPageWithPosition { page_idx, bit_page }| (page_idx, bit_page));
+                    .map(|BitPageWithPosition { page_idx, bit_page }| (Cow::Owned(page_idx), Cow::Owned(bit_page)));
                 Box::new(iter)
             }
         }
@@ -251,7 +259,10 @@ impl BitPageVec {
             .iter()
             .merge_join_by(second.iter(), merge_cmp)
             .map(or_merge_iter)
-            .map(|(page_idx, bit_page)| BitPageWithPosition { page_idx, bit_page })
+            .map(|(page_idx, bit_page)| BitPageWithPosition {
+                page_idx: page_idx.into_owned(),
+                bit_page: bit_page.into_owned(),
+            })
             .collect_vec();
 
         *self = BitPageVec::Sparse(pages)
@@ -262,7 +273,10 @@ impl BitPageVec {
             .iter()
             .merge_join_by(second.iter(), merge_cmp)
             .filter_map(and_merge_iter)
-            .map(|(page_idx, bit_page)| BitPageWithPosition { page_idx, bit_page })
+            .map(|(page_idx, bit_page)| BitPageWithPosition {
+                page_idx: page_idx.into_owned(),
+                bit_page: bit_page.into_owned(),
+            })
             .collect_vec();
 
         if pages.is_empty() {
@@ -277,17 +291,20 @@ impl BitPageVec {
             .merge_join_by(self.iter(), |idx_1, (idx_2, _)| idx_1.cmp(idx_2))
             .filter_map(|either| match either {
                 EitherOrBoth::Both(_, (page_idx, mut bit_page)) => {
-                    bit_page.not();
-                    if bit_page == BitPage::Zeroes {
+                    bit_page.to_mut().not();
+                    if BitPage::Zeroes.eq(&bit_page) {
                         None
                     } else {
                         Some((page_idx, bit_page))
                     }
                 }
-                EitherOrBoth::Left(page_idx) => Some((page_idx, BitPage::Ones)),
+                EitherOrBoth::Left(page_idx) => Some((Cow::Owned(page_idx), Cow::Owned(BitPage::Ones))),
                 EitherOrBoth::Right(_) => None,
             })
-            .map(|(page_idx, bit_page)| BitPageWithPosition { page_idx, bit_page })
+            .map(|(page_idx, bit_page)| BitPageWithPosition {
+                page_idx: page_idx.into_owned(),
+                bit_page: bit_page.into_owned(),
+            })
             .collect_vec();
 
         if pages.is_empty() {
@@ -298,17 +315,17 @@ impl BitPageVec {
     }
 }
 
-fn merge_cmp((idx_1, _): &(usize, BitPage), (idx_2, _): &(usize, BitPage)) -> Ordering {
+fn merge_cmp((idx_1, _): &PageItem<'_>, (idx_2, _): &PageItem<'_>) -> Ordering {
     idx_1.cmp(idx_2)
 }
 
 #[inline]
-fn and_merge_iter(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> Option<(usize, BitPage)> {
+fn and_merge_iter<'a>(either: EitherOrBoth<PageItem<'a>, PageItem<'a>>) -> Option<PageItem<'a>> {
     match either {
         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
-            page_one.and(&page_two);
+            page_one.to_mut().and(&page_two);
 
-            if page_one == BitPage::Zeroes {
+            if BitPage::Zeroes.eq(&page_one) {
                 None
             } else {
                 Some((idx_1, page_one))
@@ -319,10 +336,10 @@ fn and_merge_iter(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> O
 }
 
 #[inline]
-fn or_merge_iter(either: EitherOrBoth<(usize, BitPage), (usize, BitPage)>) -> (usize, BitPage) {
+fn or_merge_iter<'a>(either: EitherOrBoth<PageItem<'a>, PageItem<'a>>) -> PageItem<'a> {
     match either {
         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
-            page_one.or(&page_two);
+            page_one.to_mut().or(&page_two);
             (idx_1, page_one)
         }
         EitherOrBoth::Left((idx, page)) => (idx, page),

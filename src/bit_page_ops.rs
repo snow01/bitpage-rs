@@ -12,40 +12,50 @@ impl BitPage {
 
     #[inline]
     pub fn and(&mut self, second: &BitPage) {
-        match (&mut *self, second) {
-            (BitPage::Zeroes, _) | (_, BitPage::Ones) => {
+        match &mut *self {
+            BitPage::Zeroes => {
                 // do nothing
             }
-
-            (_, BitPage::Zeroes) => *self = BitPage::Zeroes,
-            (BitPage::Ones, _) => *self = second.clone(),
-            (BitPage::Some(value_1), BitPage::Some(value_2)) => {
-                *value_1 &= value_2;
-                if 0.eq(value_1) {
+            BitPage::Ones => {
+                *self = second.clone();
+            }
+            BitPage::Some(value_1) => match second {
+                BitPage::Zeroes => {
                     *self = BitPage::Zeroes;
                 }
-            }
-            #[allow(unreachable_patterns)]
-            _ => {}
+                BitPage::Ones => {
+                    // do nothing
+                }
+                BitPage::Some(value_2) => {
+                    *value_1 &= value_2;
+                    if 0.eq(value_1) {
+                        *self = BitPage::Zeroes;
+                    }
+                }
+            },
         }
     }
 
     #[inline]
     pub fn or(&mut self, second: &BitPage) {
-        match (&mut *self, second) {
-            (BitPage::Ones, _) | (_, BitPage::Zeroes) => {
+        match &mut *self {
+            BitPage::Zeroes => {
+                *self = second.clone();
+            }
+            BitPage::Ones => {
                 // do nothing
             }
-            (_, BitPage::Ones) => *self = BitPage::Ones,
-            (BitPage::Zeroes, _) => *self = second.clone(),
-            (BitPage::Some(value_1), BitPage::Some(value_2)) => {
-                *value_1 |= value_2;
-                if u64::max_value().eq(value_1) {
-                    *self = BitPage::Ones;
+            BitPage::Some(value_1) => match second {
+                BitPage::Zeroes => {
+                    // do nothing
                 }
-            }
-            #[allow(unreachable_patterns)]
-            _ => {}
+                BitPage::Ones => {
+                    *self = second.clone();
+                }
+                BitPage::Some(value_2) => {
+                    *value_1 |= value_2;
+                }
+            },
         }
     }
 
