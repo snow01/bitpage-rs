@@ -5,36 +5,34 @@ use arrayvec::ArrayVec;
 
 use crate::bit_page::BitPage;
 
-const MAX_VALUE: u64 = u64::max_value();
-pub const MAX_BITS: usize = 64;
-pub const NUM_BYTES: usize = MAX_BITS / 8;
-
-pub enum BitPageIterator {
+pub enum BitPageActiveBitsIterator {
     AllZeroes,
     AllOnes { range: Range<usize> },
     Some { iter: Box<dyn Iterator<Item = usize>> },
 }
 
-impl<'a> Iterator for BitPageIterator {
+impl<'a> Iterator for BitPageActiveBitsIterator {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
-            BitPageIterator::AllZeroes => None,
-            BitPageIterator::AllOnes { range } => range.next(),
-            BitPageIterator::Some { iter } => iter.next(),
+            BitPageActiveBitsIterator::AllZeroes => None,
+            BitPageActiveBitsIterator::AllOnes { range } => range.next(),
+            BitPageActiveBitsIterator::Some { iter } => iter.next(),
         }
     }
 }
 
 impl BitPage {
-    pub fn active_bits(value: &u64) -> BitPageIterator {
+    pub fn active_bits(value: &u64) -> BitPageActiveBitsIterator {
         match value {
-            0 => BitPageIterator::AllZeroes,
-            &MAX_VALUE => BitPageIterator::AllOnes { range: (0..MAX_BITS) },
+            &BitPage::MIN_VALUE => BitPageActiveBitsIterator::AllZeroes,
+            &BitPage::MAX_VALUE => BitPageActiveBitsIterator::AllOnes {
+                range: (0..BitPage::MAX_BITS),
+            },
             _ => {
-                let mut byte_masks = Vec::<u8>::with_capacity(NUM_BYTES);
-                for i in 0..NUM_BYTES {
+                let mut byte_masks = Vec::<u8>::with_capacity(BitPage::NUM_BYTES);
+                for i in 0..BitPage::NUM_BYTES {
                     let byte = (value >> (i * 8)) as u8;
                     byte_masks.push(byte);
                 }
@@ -44,7 +42,7 @@ impl BitPage {
                     .enumerate()
                     .flat_map(|(byte_idx, byte_mask)| active_bits_iter(byte_mask).map(move |bit_idx| byte_idx * 8 + *bit_idx));
 
-                BitPageIterator::Some { iter: Box::new(iter) }
+                BitPageActiveBitsIterator::Some { iter: Box::new(iter) }
             }
         }
     }

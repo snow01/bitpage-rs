@@ -1,16 +1,22 @@
 pub struct BitPage;
 
-const ZERO: u64 = 0 as u64;
-
 impl BitPage {
+    pub const MIN_VALUE: u64 = 0 as u64;
+
+    pub const MAX_VALUE: u64 = u64::max_value();
+
+    pub const MAX_BITS: usize = 64;
+
+    pub const NUM_BYTES: usize = Self::MAX_BITS / 8;
+
     #[inline]
     pub fn zeroes() -> u64 {
-        0
+        Self::MIN_VALUE
     }
 
     #[inline]
     pub fn ones() -> u64 {
-        u64::max_value()
+        Self::MAX_VALUE
     }
 
     #[inline]
@@ -36,8 +42,13 @@ impl BitPage {
     }
 
     #[inline]
-    pub fn is_zero(value: &u64) -> bool {
-        ZERO.eq(value)
+    pub fn is_zeroes(value: &u64) -> bool {
+        Self::MIN_VALUE.eq(value)
+    }
+
+    #[inline]
+    pub fn is_ones(value: &u64) -> bool {
+        Self::MAX_VALUE.eq(value)
     }
 }
 
