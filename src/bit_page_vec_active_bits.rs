@@ -22,13 +22,13 @@ impl BitPageVec {
             BitPageVec::AllZeroes => BitPageVecActiveBitsIterator::None,
             BitPageVec::AllOnes => {
                 let iter =
-                    (0..num_pages).flat_map(|page_idx| BitPage::active_bits(&BitPage::ones()).map(move |bit_idx| (page_idx, bit_idx)));
+                    (0..num_pages).flat_map(|page_idx| BitPage::active_bits(BitPage::ones()).map(move |bit_idx| (page_idx, bit_idx)));
 
                 BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
             }
             BitPageVec::SparseWithZeroesHole(pages) => {
                 let iter = pages.iter().flat_map(|BitPageWithPosition { page_idx, bit_page }| {
-                    BitPage::active_bits(bit_page).map(move |bit_idx| (*page_idx, bit_idx))
+                    BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx))
                 });
 
                 BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
@@ -41,19 +41,19 @@ impl BitPageVec {
                     .flat_map(|either| match either {
                         EitherOrBoth::Both(_, BitPageWithPosition { page_idx, bit_page }) => {
                             let iter: Box<dyn Iterator<Item = (usize, usize)>> =
-                                Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
+                                Box::new(BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
                             iter
                         }
                         EitherOrBoth::Left(page_idx) => {
                             let bit_page = BitPage::ones();
                             let iter: Box<dyn Iterator<Item = (usize, usize)>> =
-                                Box::new(BitPage::active_bits(&bit_page).map(move |bit_idx| (page_idx, bit_idx)));
+                                Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (page_idx, bit_idx)));
                             iter
                         }
                         EitherOrBoth::Right(BitPageWithPosition { page_idx, .. }) => {
                             let bit_page = BitPage::zeroes();
                             let iter: Box<dyn Iterator<Item = (usize, usize)>> =
-                                Box::new(BitPage::active_bits(&bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
+                                Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
                             iter
                         }
                     });

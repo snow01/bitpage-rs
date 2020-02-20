@@ -165,15 +165,15 @@ impl BitPageVec {
         }
     }
 
-    pub(crate) fn count_ones(pages: &Vec<BitPageWithPosition>) -> u32 {
+    pub(crate) fn count_ones(pages: &[BitPageWithPosition]) -> u32 {
         pages.iter().map(|value| value.bit_page.count_ones()).sum()
     }
 
-    pub(crate) fn start_page(pages: &Vec<BitPageWithPosition>) -> usize {
+    pub(crate) fn start_page(pages: &[BitPageWithPosition]) -> usize {
         pages[0].page_idx
     }
 
-    pub(crate) fn end_page(pages: &Vec<BitPageWithPosition>) -> usize {
+    pub(crate) fn end_page(pages: &[BitPageWithPosition]) -> usize {
         pages[pages.len() - 1].page_idx
     }
 }

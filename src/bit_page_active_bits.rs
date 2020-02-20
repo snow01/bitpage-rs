@@ -24,10 +24,10 @@ impl<'a> Iterator for BitPageActiveBitsIterator {
 }
 
 impl BitPage {
-    pub fn active_bits(value: &u64) -> BitPageActiveBitsIterator {
+    pub fn active_bits(value: u64) -> BitPageActiveBitsIterator {
         match value {
-            &BitPage::MIN_VALUE => BitPageActiveBitsIterator::AllZeroes,
-            &BitPage::MAX_VALUE => BitPageActiveBitsIterator::AllOnes {
+            BitPage::MIN_VALUE => BitPageActiveBitsIterator::AllZeroes,
+            BitPage::MAX_VALUE => BitPageActiveBitsIterator::AllOnes {
                 range: (0..BitPage::MAX_BITS),
             },
             _ => {
@@ -104,7 +104,7 @@ mod tests {
                 i,
                 bit_page,
                 BitPage::is_bit_set(&bit_page, i),
-                BitPage::active_bits(&bit_page).collect_vec()
+                BitPage::active_bits(bit_page).collect_vec()
             );
         }
     }
