@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt;
 use std::iter::empty;
 use std::time::Instant;
 
@@ -24,6 +25,12 @@ pub struct BitPageVecIter<'a> {
     iter: PageIterator<'a>,
 }
 
+impl<'a> fmt::Debug for BitPageVecIter<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "BitPageVecIter(kind={:?}", self.kind)
+    }
+}
+
 impl<'a> BitPageVecIter<'a> {
     pub fn new(kind: IterKind, iter: PageIterator) -> BitPageVecIter {
         BitPageVecIter { kind, iter }
@@ -35,11 +42,13 @@ impl<'a> BitPageVecIter<'a> {
 
     pub fn into_bit_page_vec(self) -> BitPageVec {
         let instant = Instant::now();
-        if log_enabled!(target: "search_time_taken", Level::Debug) {
-            debug!(target: "search_time_taken", "into_bit_page_vec(kind={:?})", self.kind);
+        let kind = self.kind;
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "into_bit_page_vec(kind={:?})", self.kind);
         }
 
-        match self.kind {
+        let result = match self.kind {
             IterKind::AllZeroes => BitPageVec::AllZeroes,
             IterKind::SparseWithZeroesHole => {
                 let pages = self
@@ -53,13 +62,7 @@ impl<'a> BitPageVecIter<'a> {
                     })
                     .collect_vec();
 
-                let result = BitPageVec::compact_sparse_with_zeroes_hole(pages);
-
-                if log_enabled!(target: "search_time_taken", Level::Debug) {
-                    debug!(target: "search_time_taken", "into_bit_page_vec(kind={:?}):: time taken={:?}", IterKind::SparseWithZeroesHole, instant.elapsed());
-                }
-
-                result
+                BitPageVec::compact_sparse_with_zeroes_hole(pages)
             }
             IterKind::AllOnes => BitPageVec::AllOnes,
             IterKind::SparseWithOnesHole => {
@@ -74,15 +77,15 @@ impl<'a> BitPageVecIter<'a> {
                     })
                     .collect_vec();
 
-                let result = BitPageVec::compact_sparse_with_ones_hole(pages);
-
-                if log_enabled!(target: "search_time_taken", Level::Debug) {
-                    debug!(target: "search_time_taken", "into_bit_page_vec(kind={:?}):: time taken={:?}", IterKind::SparseWithOnesHole, instant.elapsed());
-                }
-
-                result
+                BitPageVec::compact_sparse_with_ones_hole(pages)
             }
+        };
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "into_bit_page_vec(kind={:?}):: time taken={:?} and result={:?}", kind, instant.elapsed(), result);
         }
+
+        result
     }
 
     pub fn not(mut self) -> BitPageVecIter<'a> {
@@ -106,8 +109,12 @@ impl<'a> BitPageVecIter<'a> {
         self
     }
 
-    pub fn or(mut first: BitPageVecIter<'a>, mut second: BitPageVecIter<'a>) -> BitPageVecIter<'a> {
-        match first.kind {
+    pub fn or(first: BitPageVecIter<'a>, second: BitPageVecIter<'a>) -> BitPageVecIter<'a> {
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "BitPageVecIter::OR first={:?} second={:?}", first, second);
+        }
+
+        let result = match first.kind {
             IterKind::AllZeroes => second,
             IterKind::SparseWithZeroesHole => match second.kind {
                 IterKind::AllZeroes => first,
@@ -125,15 +132,14 @@ impl<'a> BitPageVecIter<'a> {
                         }
                         EitherOrBoth::Left((idx, page)) | EitherOrBoth::Right((idx, page)) => (idx, page),
                     });
-                    first.iter = Box::new(iter);
-                    first
+
+                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
                 }
                 IterKind::AllOnes => second,
                 IterKind::SparseWithOnesHole => {
                     // merge here... cross type
                     let iter = first.iter.merge_join_by(second.iter, merge_cmp).filter_map(or_merge_cross_types);
-                    second.iter = Box::new(iter);
-                    second
+                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
                 }
             },
             IterKind::AllOnes => first,
@@ -144,8 +150,7 @@ impl<'a> BitPageVecIter<'a> {
                     let iter = second.iter.merge_join_by(first.iter, merge_cmp).filter_map(or_merge_cross_types);
 
                     // return type would be SparseWithOnesHole
-                    first.iter = Box::new(iter);
-                    first
+                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
                 }
                 IterKind::AllOnes => second,
                 IterKind::SparseWithOnesHole => {
@@ -164,15 +169,24 @@ impl<'a> BitPageVecIter<'a> {
                         EitherOrBoth::Left(_) | EitherOrBoth::Right(_) => None,
                     });
 
-                    first.iter = Box::new(iter);
-                    first
+                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
                 }
             },
+        };
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "BitPageVecIter::AND result={:?}", result);
         }
+
+        result
     }
 
-    pub fn and(mut first: BitPageVecIter<'a>, mut second: BitPageVecIter<'a>) -> BitPageVecIter<'a> {
-        match first.kind {
+    pub fn and(first: BitPageVecIter<'a>, second: BitPageVecIter<'a>) -> BitPageVecIter<'a> {
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "BitPageVecIter::AND first={:?} second={:?}", first, second);
+        }
+
+        let result = match first.kind {
             IterKind::AllZeroes => first, // essentially AllZeroes
             IterKind::SparseWithZeroesHole => match second.kind {
                 IterKind::AllZeroes => second,
@@ -190,17 +204,16 @@ impl<'a> BitPageVecIter<'a> {
                         }
                         EitherOrBoth::Left(_) | EitherOrBoth::Right(_) => None,
                     });
-                    first.iter = Box::new(iter);
-                    first
+
+                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
                 }
-                IterKind::AllOnes => second,
+                IterKind::AllOnes => first,
                 IterKind::SparseWithOnesHole => {
                     // merge here... cross type
                     let iter = first.iter.merge_join_by(second.iter, merge_cmp).filter_map(and_merge_cross_types);
 
                     // return type would be SparseWithZeroesHole
-                    first.iter = Box::new(iter);
-                    first
+                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
                 }
             },
             IterKind::AllOnes => second,
@@ -212,8 +225,7 @@ impl<'a> BitPageVecIter<'a> {
                     let iter = second.iter.merge_join_by(first.iter, merge_cmp).filter_map(and_merge_cross_types);
 
                     // return type would be SparseWithZeroesHole
-                    second.iter = Box::new(iter);
-                    second
+                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
                 }
                 IterKind::AllOnes => first,
                 IterKind::SparseWithOnesHole => {
@@ -226,11 +238,16 @@ impl<'a> BitPageVecIter<'a> {
                         }
                         EitherOrBoth::Left((idx, page)) | EitherOrBoth::Right((idx, page)) => (idx, page),
                     });
-                    first.iter = Box::new(iter);
-                    first
+                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
                 }
             },
+        };
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "BitPageVecIter::AND result={:?}", result);
         }
+
+        result
     }
 }
 

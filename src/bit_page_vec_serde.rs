@@ -1,5 +1,6 @@
 use bytes::{Buf, BufMut};
 use itertools::{EitherOrBoth, Itertools};
+use log::{debug, log_enabled, Level};
 
 use crate::bit_page_vec::BitPageWithPosition;
 use crate::{BitPage, BitPageVec};
@@ -31,7 +32,7 @@ impl BitPageVec {
         }
     }
 
-    fn encode_pages<W>(pages: &Vec<BitPageWithPosition>, buf: &mut W)
+    fn encode_pages<W>(pages: &[BitPageWithPosition], buf: &mut W)
     where
         W: BufMut,
     {
@@ -71,7 +72,11 @@ impl BitPageVec {
     }
 
     pub(crate) fn compact_sparse_with_zeroes_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
-        if pages.is_empty() {
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - pages len={}", pages.len());
+        }
+
+        let result = if pages.is_empty() {
             BitPageVec::AllZeroes
         } else if pages.len() <= 10_000 {
             BitPageVec::SparseWithZeroesHole(pages)
@@ -81,10 +86,18 @@ impl BitPageVec {
             let max_possible_length = (end_page - start_page + 1) as f64;
             let actual_length = pages.len() as f64;
 
+            if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
+            }
+
             // find start page, end page, and length
             // if length >= 75% of (end - start) page
             // and # of active bits >= 75% of active bits needed for fully packed 75%
             if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 >= 0.75 * max_possible_length * 64.0 {
+                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                    debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
+                }
+
                 // filter out all page with max value
                 // and include pages with holes
                 let pages = (0..=end_page)
@@ -116,11 +129,21 @@ impl BitPageVec {
             } else {
                 BitPageVec::SparseWithZeroesHole(pages)
             }
+        };
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::result={:?}", result);
         }
+
+        result
     }
 
     pub(crate) fn compact_sparse_with_ones_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
-        if pages.is_empty() {
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - pages len={}", pages.len());
+        }
+
+        let result = if pages.is_empty() {
             BitPageVec::AllOnes
         } else if pages.len() <= 10_000 {
             BitPageVec::SparseWithOnesHole(pages)
@@ -130,10 +153,18 @@ impl BitPageVec {
             let max_possible_length = (end_page - start_page + 1) as f64;
             let actual_length = pages.len() as f64;
 
+            if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
+            }
+
             // find start page, end page, and length
             // if length >= 75% of (end - start) page
             // and # of active bits <= 25% of active bits needed for fully packed 75%
             if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 <= 0.25 * max_possible_length * 64.0 {
+                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                    debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
+                }
+
                 // filter out all page with max value
                 // and include pages with holes
                 let pages = (0..=end_page)
@@ -165,7 +196,13 @@ impl BitPageVec {
             } else {
                 BitPageVec::SparseWithOnesHole(pages)
             }
+        };
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::result={:?}", result);
         }
+
+        result
     }
 
     pub(crate) fn decode_pages<R>(buf: &mut R) -> anyhow::Result<Vec<BitPageWithPosition>>

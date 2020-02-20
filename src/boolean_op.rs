@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use log::{debug, log_enabled, Level};
 
 use crate::bit_page_vec_iter::BitPageVecIter;
 use crate::BitPageVec;
@@ -12,6 +13,7 @@ pub enum BooleanOp<'a> {
     OwnedLeaf(BitPageVec),
 }
 
+#[derive(Debug)]
 pub struct BooleanOpResult<'a> {
     len: usize,
     iter: BitPageVecIter<'a>,
@@ -53,7 +55,11 @@ impl<'a> BooleanOp<'a> {
     }
 
     pub fn evaluate(self, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
-        match self {
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "evaluate boolean_op={:?}", self);
+        }
+
+        let result = match self {
             BooleanOp::And(ops) => {
                 // find max of start_page
                 // find min of end_page
@@ -79,7 +85,13 @@ impl<'a> BooleanOp<'a> {
                 len: leaf.size(),
                 iter: leaf.into_iter(),
             },
+        };
+
+        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            debug!(target: "bit_page_vec_log", "evaluate boolean_op result={:?}", result);
         }
+
+        result
     }
 
     fn and_merge_leaves(mut leaves: Vec<BooleanOpResult<'a>>, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
