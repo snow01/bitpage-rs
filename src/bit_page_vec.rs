@@ -1,3 +1,4 @@
+// @author shailendra.sharma
 use std::fmt;
 
 use crate::BitPage;
@@ -185,19 +186,21 @@ impl fmt::Debug for BitPageVec {
             BitPageVec::AllOnes => write!(f, "BitPageVec::AllOnes"),
             BitPageVec::SparseWithZeroesHole(pages) => write!(
                 f,
-                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={}, end_page={}",
+                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={}, end_page={}, pages={:?}",
                 self.size(),
                 BitPageVec::count_ones(pages),
                 BitPageVec::start_page(pages),
-                BitPageVec::end_page(pages)
+                BitPageVec::end_page(pages),
+                pages
             ),
             BitPageVec::SparseWithOnesHole(pages) => write!(
                 f,
-                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={}, end_page={}",
+                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={}, end_page={}, pages={:?}",
                 self.size(),
                 BitPageVec::count_ones(pages),
                 BitPageVec::start_page(pages),
-                BitPageVec::end_page(pages)
+                BitPageVec::end_page(pages),
+                pages
             ),
         }
     }

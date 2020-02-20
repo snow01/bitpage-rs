@@ -1,3 +1,4 @@
+// @author shailendra.sharma
 use std::cmp::Ordering;
 use std::fmt;
 use std::iter::empty;
@@ -27,7 +28,7 @@ pub struct BitPageVecIter<'a> {
 
 impl<'a> fmt::Debug for BitPageVecIter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "BitPageVecIter(kind={:?}", self.kind)
+        write!(f, "BitPageVecIter(kind={:?})", self.kind)
     }
 }
 
