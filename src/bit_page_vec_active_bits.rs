@@ -171,8 +171,8 @@ mod tests {
 
     #[test]
     fn test_bit_page_active_bits() {
-        let last_page = 1;
-        let last_bit = 3;
+        let last_page = 0;
+        let last_bit = 1;
         let mut bit_page_vec = BitPageVec::all_zeros((last_page, last_bit));
 
         for page in 0..2 {

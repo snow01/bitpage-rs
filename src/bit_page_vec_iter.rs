@@ -9,7 +9,7 @@ use log::{debug, log_enabled, trace, Level};
 
 use crate::bit_page::BitPageWithPosition;
 use crate::bit_page_vec::BitPageVecKind;
-use crate::{BitPage, BitPageVec, DbBitPageVec};
+use crate::{BitPage, BitPageVec};
 
 pub type PageItem = (usize, u64);
 pub type PageIterator<'a> = Box<dyn Iterator<Item = PageItem> + 'a>;
@@ -85,15 +85,6 @@ impl<'a> BitPageVecIter<'a> {
         }
 
         result
-    }
-
-    pub fn add(self, db_value: DbBitPageVec) -> BitPageVecIter<'a> {
-        let bit_page_vec = match db_value {
-            DbBitPageVec::AllZeroes => BitPageVec::all_zeros(self.last_bit_index),
-            DbBitPageVec::Sparse(pages) => BitPageVec::new(BitPageVecKind::SparseWithZeroesHole, Some(pages), self.last_bit_index),
-        };
-
-        BitPageVecIter::or(self, bit_page_vec.into_iter())
     }
 
     pub fn not(self) -> BitPageVecIter<'a> {
