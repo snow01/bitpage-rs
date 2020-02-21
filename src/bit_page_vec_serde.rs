@@ -1,7 +1,7 @@
 // @shailendra.sharma
 use bytes::{Buf, BufMut};
 use itertools::{EitherOrBoth, Itertools};
-use log::{debug, log_enabled, Level};
+use log::{debug, log_enabled, trace, Level};
 
 use crate::bit_page_vec::BitPageWithPosition;
 use crate::{BitPage, BitPageVec};
@@ -73,8 +73,8 @@ impl BitPageVec {
     }
 
     pub(crate) fn compact_sparse_with_zeroes_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
-        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - pages len={}", pages.len());
+        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
+            trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - pages len={}", pages.len());
         }
 
         let result = if pages.is_empty() {
@@ -87,16 +87,16 @@ impl BitPageVec {
             let max_possible_length = (end_page - start_page + 1) as f64;
             let actual_length = pages.len() as f64;
 
-            if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-                debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
+            if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
+                trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
             }
 
             // find start page, end page, and length
             // if length >= 75% of (end - start) page
             // and # of active bits >= 75% of active bits needed for fully packed 75%
             if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 >= 0.75 * max_possible_length * 64.0 {
-                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-                    debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
+                if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
+                    trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
                 }
 
                 // filter out all page with max value
@@ -132,16 +132,16 @@ impl BitPageVec {
             }
         };
 
-        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::result={:?}", result);
+        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
+            trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::result={:?}", result);
         }
 
         result
     }
 
     pub(crate) fn compact_sparse_with_ones_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
-        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - pages len={}", pages.len());
+        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
+            trace!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - pages len={}", pages.len());
         }
 
         let result = if pages.is_empty() {
@@ -154,7 +154,7 @@ impl BitPageVec {
             let max_possible_length = (end_page - start_page + 1) as f64;
             let actual_length = pages.len() as f64;
 
-            if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+            if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
                 debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
             }
 
@@ -162,7 +162,7 @@ impl BitPageVec {
             // if length >= 75% of (end - start) page
             // and # of active bits <= 25% of active bits needed for fully packed 75%
             if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 <= 0.25 * max_possible_length * 64.0 {
-                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
                     debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
                 }
 
@@ -199,8 +199,8 @@ impl BitPageVec {
             }
         };
 
-        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::result={:?}", result);
+        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
+            trace!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::result={:?}", result);
         }
 
         result
