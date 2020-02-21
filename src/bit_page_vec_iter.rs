@@ -64,6 +64,7 @@ impl<'a> BitPageVecIter<'a> {
                     .collect_vec();
 
                 BitPageVec::compact_sparse_with_zeroes_hole(pages)
+                // BitPageVec::SparseWithZeroesHole(pages)
             }
             IterKind::AllOnes => BitPageVec::AllOnes,
             IterKind::SparseWithOnesHole => {
@@ -79,6 +80,7 @@ impl<'a> BitPageVecIter<'a> {
                     .collect_vec();
 
                 BitPageVec::compact_sparse_with_ones_hole(pages)
+                // BitPageVec::SparseWithOnesHole(pages)
             }
         };
 
@@ -89,25 +91,19 @@ impl<'a> BitPageVecIter<'a> {
         result
     }
 
-    pub fn not(mut self) -> BitPageVecIter<'a> {
+    pub fn not(self) -> BitPageVecIter<'a> {
         match self.kind {
-            IterKind::AllZeroes => {
-                self.kind = IterKind::AllOnes;
-            }
-            IterKind::SparseWithZeroesHole => {
-                self.kind = IterKind::SparseWithOnesHole;
-                self.iter = Box::new(self.iter.map(|(page_idx, bit_page)| (page_idx, !bit_page)));
-            }
-            IterKind::AllOnes => {
-                self.kind = IterKind::AllZeroes;
-            }
-            IterKind::SparseWithOnesHole => {
-                self.kind = IterKind::SparseWithZeroesHole;
-                self.iter = Box::new(self.iter.map(|(page_idx, bit_page)| (page_idx, !bit_page)));
-            }
+            IterKind::AllZeroes => BitPageVec::AllOnes.into_iter(),
+            IterKind::SparseWithZeroesHole => BitPageVecIter::new(
+                IterKind::SparseWithOnesHole,
+                Box::new(self.iter.map(|(page_idx, bit_page)| (page_idx, !bit_page))),
+            ),
+            IterKind::AllOnes => BitPageVec::AllZeroes.into_iter(),
+            IterKind::SparseWithOnesHole => BitPageVecIter::new(
+                IterKind::SparseWithZeroesHole,
+                Box::new(self.iter.map(|(page_idx, bit_page)| (page_idx, !bit_page))),
+            ),
         }
-
-        self
     }
 
     pub fn or(first: BitPageVecIter<'a>, second: BitPageVecIter<'a>) -> BitPageVecIter<'a> {
@@ -176,7 +172,7 @@ impl<'a> BitPageVecIter<'a> {
         };
 
         if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "BitPageVecIter::AND result={:?}", result);
+            debug!(target: "bit_page_vec_log", "BitPageVecIter::OR result={:?}", result);
         }
 
         result

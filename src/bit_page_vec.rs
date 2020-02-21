@@ -13,10 +13,16 @@ pub enum BitPageVec {
     SparseWithOnesHole(Vec<BitPageWithPosition>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct BitPageWithPosition {
     pub(crate) page_idx: usize,
     pub(crate) bit_page: u64,
+}
+
+impl fmt::Debug for BitPageWithPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.page_idx)
+    }
 }
 
 impl Default for BitPageVec {
@@ -170,12 +176,20 @@ impl BitPageVec {
         pages.iter().map(|value| value.bit_page.count_ones()).sum()
     }
 
-    pub(crate) fn start_page(pages: &[BitPageWithPosition]) -> usize {
-        pages[0].page_idx
+    pub(crate) fn start_page(pages: &[BitPageWithPosition]) -> Option<usize> {
+        if pages.is_empty() {
+            None
+        } else {
+            Some(pages[0].page_idx)
+        }
     }
 
-    pub(crate) fn end_page(pages: &[BitPageWithPosition]) -> usize {
-        pages[pages.len() - 1].page_idx
+    pub(crate) fn end_page(pages: &[BitPageWithPosition]) -> Option<usize> {
+        if pages.is_empty() {
+            None
+        } else {
+            Some(pages[pages.len() - 1].page_idx)
+        }
     }
 }
 
@@ -186,7 +200,7 @@ impl fmt::Debug for BitPageVec {
             BitPageVec::AllOnes => write!(f, "BitPageVec::AllOnes"),
             BitPageVec::SparseWithZeroesHole(pages) => write!(
                 f,
-                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={}, end_page={}, pages={:?}",
+                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={:?}, end_page={:?}, pages={:?}",
                 self.size(),
                 BitPageVec::count_ones(pages),
                 BitPageVec::start_page(pages),
@@ -195,7 +209,7 @@ impl fmt::Debug for BitPageVec {
             ),
             BitPageVec::SparseWithOnesHole(pages) => write!(
                 f,
-                "BitPageVec::SparseWithZeroes(len={}, active_bits={}, start_page={}, end_page={}, pages={:?}",
+                "BitPageVec::SparseWithOnesHole(len={}, active_bits={}, start_page={:?}, end_page={:?}, pages={:?}",
                 self.size(),
                 BitPageVec::count_ones(pages),
                 BitPageVec::start_page(pages),

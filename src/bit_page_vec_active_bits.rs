@@ -2,6 +2,7 @@
 use std::cmp::min;
 
 use itertools::{EitherOrBoth, Itertools};
+use log::{debug, log_enabled, Level};
 
 use crate::bit_page_vec::BitPageWithPosition;
 use crate::{BitPage, BitPageVec};
@@ -11,8 +12,18 @@ impl BitPageVec {
         match self {
             BitPageVec::AllZeroes => 0,
             BitPageVec::AllOnes => num_pages * BitPage::MAX_BITS,
-            BitPageVec::SparseWithZeroesHole(pages) => BitPageVec::count_ones(pages) as usize,
+            BitPageVec::SparseWithZeroesHole(pages) => {
+                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}, pages={:?}", pages.len(), pages);
+                }
+
+                BitPageVec::count_ones(pages) as usize
+            }
             BitPageVec::SparseWithOnesHole(pages) => {
+                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithOnesHole) #pages={}, pages={:?}", pages.len(), pages);
+                }
+
                 BitPageVec::count_ones(pages) as usize + (num_pages - min(pages.len(), num_pages)) * BitPage::MAX_BITS
             }
         }
