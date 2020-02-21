@@ -550,3 +550,6 @@ pub(crate) fn and_merge_cross_types(either: EitherOrBoth<PageItem, PageItem>) ->
 pub(crate) fn min_last_bit_index(first: (usize, usize), second: (usize, usize)) -> (usize, usize) {
     min(first, second)
 }
+
+#[cfg(test)]
+mod tests {}

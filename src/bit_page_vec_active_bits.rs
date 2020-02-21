@@ -17,6 +17,8 @@ impl BitPageVec {
                     debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}", self.size());
                 }
 
+                // self.pages.as_ref().map_or_else(|| 0, |pages| pages.iter().map(|value| value.bit_page.count_ones()).sum())
+
                 BitPageVec::count_ones(self.pages.as_ref()) as usize
             }
             BitPageVecKind::SparseWithOnesHole => {
@@ -59,9 +61,15 @@ impl BitPageVec {
             }
             BitPageVecKind::SparseWithZeroesHole => {
                 if let Some(ref pages) = self.pages {
-                    let iter = pages.iter().flat_map(|BitPageWithPosition { page_idx, bit_page }| {
-                        BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx))
-                    });
+                    let last_page = self.last_bit_index.0;
+                    let last_bit = self.last_bit_index.1;
+                    let iter = pages.iter().filter(move |value| value.page_idx > last_page).flat_map(
+                        move |BitPageWithPosition { page_idx, bit_page }| {
+                            BitPage::active_bits(*bit_page)
+                                .filter(move |bit_idx| page_idx.lt(&last_page) || bit_idx.lt(&last_bit))
+                                .map(move |bit_idx| (*page_idx, bit_idx))
+                        },
+                    );
 
                     BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
                 } else {
