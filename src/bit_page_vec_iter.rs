@@ -317,7 +317,7 @@ impl<'a> BitPageVecIter<'a> {
 
                 // filter out all page with max value
                 // and include pages with holes
-                let pages = (0..=end_page)
+                let pages = (0..=last_bit_index.0)
                     .merge_join_by(pages.into_iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
                         page_1_idx.cmp(page_2_idx)
                     })
@@ -386,7 +386,7 @@ impl<'a> BitPageVecIter<'a> {
 
                 // filter out all page with max value
                 // and include pages with holes
-                let pages = (0..=end_page)
+                let pages = (0..=last_bit_index.0)
                     .merge_join_by(pages.into_iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
                         page_1_idx.cmp(page_2_idx)
                     })
