@@ -2,7 +2,7 @@
 use itertools::{EitherOrBoth, Itertools};
 use log::{debug, log_enabled, Level};
 
-use crate::bit_page::BitPageWithPosition;
+use crate::bit_page::{zero_masks, BitPageWithPosition};
 use crate::bit_page_vec::BitPageVecKind;
 use crate::{BitPage, BitPageVec};
 
@@ -17,9 +17,24 @@ impl BitPageVec {
                     debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}", self.size());
                 }
 
-                // self.pages.as_ref().map_or_else(|| 0, |pages| pages.iter().map(|value| value.bit_page.count_ones()).sum())
-
-                BitPageVec::count_ones(self.pages.as_ref()) as usize
+                if let Some(ref pages) = self.pages {
+                    let last_page = self.last_bit_index.0;
+                    let last_bit = self.last_bit_index.1;
+                    pages
+                        .iter()
+                        .filter(move |value| value.page_idx <= last_page)
+                        .map(move |value| {
+                            if value.page_idx == last_page {
+                                let bit_page = value.bit_page & zero_masks()[last_bit];
+                                bit_page.count_ones() as usize
+                            } else {
+                                value.bit_page.count_ones() as usize
+                            }
+                        })
+                        .sum::<usize>()
+                } else {
+                    0
+                }
             }
             BitPageVecKind::SparseWithOnesHole => {
                 if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
@@ -63,7 +78,7 @@ impl BitPageVec {
                 if let Some(ref pages) = self.pages {
                     let last_page = self.last_bit_index.0;
                     let last_bit = self.last_bit_index.1;
-                    let iter = pages.iter().filter(move |value| value.page_idx > last_page).flat_map(
+                    let iter = pages.iter().filter(move |value| value.page_idx <= last_page).flat_map(
                         move |BitPageWithPosition { page_idx, bit_page }| {
                             BitPage::active_bits(*bit_page)
                                 .filter(move |bit_idx| page_idx.lt(&last_page) || bit_idx.lt(&last_bit))
@@ -145,5 +160,29 @@ impl<'a> Iterator for BitPageVecActiveBitsIterator<'a> {
             BitPageVecActiveBitsIterator::None => None,
             BitPageVecActiveBitsIterator::Some { iter } => iter.next(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use itertools::Itertools;
+
+    use crate::BitPageVec;
+
+    #[test]
+    fn test_bit_page_active_bits() {
+        let last_page = 1;
+        let last_bit = 3;
+        let mut bit_page_vec = BitPageVec::all_zeros((last_page, last_bit));
+
+        for page in 0..2 {
+            for bit in 0..4 {
+                bit_page_vec.set_bit(page, bit);
+            }
+        }
+
+        println!("Vector = {:?}", bit_page_vec);
+        println!("Active Bits Count = {}", bit_page_vec.active_bits_count());
+        println!("Active Bits = {:?}", bit_page_vec.active_bits().collect_vec());
     }
 }

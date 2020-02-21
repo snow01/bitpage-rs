@@ -67,8 +67,8 @@ impl BitPage {
     }
 }
 
-fn masks_inner() -> [u64; 64] {
-    let mut masks: [u64; 64] = [0; 64];
+fn masks_inner() -> [u64; BitPage::MAX_BITS] {
+    let mut masks: [u64; BitPage::MAX_BITS] = [0; BitPage::MAX_BITS];
 
     for (index, mask) in masks.iter_mut().enumerate() {
         *mask = 0x01 << index as u64;
@@ -77,9 +77,27 @@ fn masks_inner() -> [u64; 64] {
     masks
 }
 
+fn zero_masks_inner() -> [u64; BitPage::MAX_BITS] {
+    let mut masks: [u64; BitPage::MAX_BITS] = [0; BitPage::MAX_BITS];
+
+    let mut mask = 0;
+    for index in 0..BitPage::MAX_BITS {
+        masks[index] = mask;
+
+        BitPage::set_bit(&mut mask, index);
+    }
+
+    masks
+}
+
 #[inline]
-fn masks() -> &'static [u64; 64] {
+fn masks() -> &'static [u64; BitPage::MAX_BITS] {
     &*MASKS
+}
+
+#[inline]
+pub fn zero_masks() -> &'static [u64; BitPage::MAX_BITS] {
+    &*ZERO_MASKS
 }
 
 #[inline]
@@ -88,5 +106,20 @@ fn get_mask(bit_idx: usize) -> u64 {
 }
 
 lazy_static! {
-    static ref MASKS: [u64; 64] = masks_inner();
+    static ref MASKS: [u64; BitPage::MAX_BITS] = masks_inner();
+    static ref ZERO_MASKS: [u64; BitPage::MAX_BITS] = zero_masks_inner();
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::bit_page::zero_masks_inner;
+
+    #[test]
+    fn test_zero_masks() {
+        let zero_masks = zero_masks_inner();
+
+        for mask in zero_masks.iter() {
+            println!("{:b}", mask);
+        }
+    }
 }
