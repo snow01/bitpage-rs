@@ -1,13 +1,11 @@
 // @shailendra.sharma
 use bytes::{Buf, BufMut};
-use itertools::{EitherOrBoth, Itertools};
-use log::{debug, log_enabled, trace, Level};
 
 use crate::bit_page_vec::BitPageWithPosition;
 use crate::{BitPage, BitPageVec};
 
 impl BitPageVec {
-    pub fn encode<W>(&self, buf: &mut W)
+    pub fn encode<W>(&self, buf: &mut W) -> anyhow::Result<()>
     where
         W: BufMut,
     {
@@ -22,15 +20,18 @@ impl BitPageVec {
 
                 Self::encode_pages(pages, buf);
             }
-            BitPageVec::AllOnes => {
-                buf.put_u8(2);
-            }
-            BitPageVec::SparseWithOnesHole(pages) => {
-                buf.put_u8(3);
-
-                Self::encode_pages(pages, buf);
-            }
+            _ => anyhow::bail!("Not a valid BitPageVec type for encoding={:?}", self),
+            // BitPageVec::AllOnes => {
+            //     buf.put_u8(2);
+            // }
+            // BitPageVec::SparseWithOnesHole(pages) => {
+            //     buf.put_u8(3);
+            //
+            //     Self::encode_pages(pages, buf);
+            // }
         }
+
+        Ok(())
     }
 
     fn encode_pages<W>(pages: &[BitPageWithPosition], buf: &mut W)
@@ -60,150 +61,16 @@ impl BitPageVec {
             1 => {
                 let pages = Self::decode_pages(buf)?;
 
-                Ok(Self::compact_sparse_with_zeroes_hole(pages))
+                Ok(BitPageVec::SparseWithZeroesHole(pages))
             }
-            2 => Ok(BitPageVec::AllOnes),
-            3 => {
-                let pages = Self::decode_pages(buf)?;
-
-                Ok(Self::compact_sparse_with_ones_hole(pages))
-            }
-            _ => anyhow::bail!("Not a valid BitPageVec type={}", t),
+            // 2 => Ok(BitPageVec::AllOnes),
+            // 3 => {
+            //     let pages = Self::decode_pages(buf)?;
+            //
+            //     Ok(Self::compact_sparse_with_ones_hole(pages))
+            // }
+            _ => anyhow::bail!("Not a valid BitPageVec type={} for decoding", t),
         }
-    }
-
-    pub(crate) fn compact_sparse_with_zeroes_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
-        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-            trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - pages len={}", pages.len());
-        }
-
-        let result = if pages.is_empty() {
-            BitPageVec::AllZeroes
-        } else if pages.len() <= 10_000 {
-            BitPageVec::SparseWithZeroesHole(pages)
-        } else {
-            let start_page = pages[0].page_idx;
-            let end_page = pages[pages.len() - 1].page_idx;
-            let max_possible_length = (end_page - start_page + 1) as f64;
-            let actual_length = pages.len() as f64;
-
-            if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-                trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
-            }
-
-            // find start page, end page, and length
-            // if length >= 75% of (end - start) page
-            // and # of active bits >= 75% of active bits needed for fully packed 75%
-            if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 >= 0.75 * max_possible_length * 64.0 {
-                if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-                    trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
-                }
-
-                // filter out all page with max value
-                // and include pages with holes
-                let pages = (0..=end_page)
-                    .merge_join_by(pages.into_iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
-                        page_1_idx.cmp(page_2_idx)
-                    })
-                    .filter_map(|either| {
-                        match either {
-                            EitherOrBoth::Both(_, BitPageWithPosition { page_idx, bit_page }) => {
-                                if BitPage::is_ones(&bit_page) {
-                                    None
-                                } else {
-                                    Some(BitPageWithPosition { page_idx, bit_page })
-                                }
-                            }
-                            EitherOrBoth::Left(page_idx) => Some(BitPageWithPosition {
-                                page_idx,
-                                bit_page: BitPage::zeroes(),
-                            }),
-                            EitherOrBoth::Right(_) => {
-                                // this case should not arise
-                                None
-                            }
-                        }
-                    })
-                    .collect_vec();
-
-                BitPageVec::SparseWithOnesHole(pages)
-            } else {
-                BitPageVec::SparseWithZeroesHole(pages)
-            }
-        };
-
-        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-            trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::result={:?}", result);
-        }
-
-        result
-    }
-
-    pub(crate) fn compact_sparse_with_ones_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
-        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-            trace!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - pages len={}", pages.len());
-        }
-
-        let result = if pages.is_empty() {
-            BitPageVec::AllOnes
-        } else if pages.len() <= 10_000 {
-            BitPageVec::SparseWithOnesHole(pages)
-        } else {
-            let start_page = pages[0].page_idx;
-            let end_page = pages[pages.len() - 1].page_idx;
-            let max_possible_length = (end_page - start_page + 1) as f64;
-            let actual_length = pages.len() as f64;
-
-            if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-                debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - start_page={} end_page={} max_possible_length={} actual_length={}", start_page, end_page, max_possible_length, actual_length);
-            }
-
-            // find start page, end page, and length
-            // if length >= 75% of (end - start) page
-            // and # of active bits <= 25% of active bits needed for fully packed 75%
-            if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 <= 0.25 * max_possible_length * 64.0 {
-                if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-                    debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
-                }
-
-                // filter out all page with max value
-                // and include pages with holes
-                let pages = (0..=end_page)
-                    .merge_join_by(pages.into_iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
-                        page_1_idx.cmp(page_2_idx)
-                    })
-                    .filter_map(|either| {
-                        match either {
-                            EitherOrBoth::Both(_, BitPageWithPosition { page_idx, bit_page }) => {
-                                if BitPage::is_zeroes(&bit_page) {
-                                    None
-                                } else {
-                                    Some(BitPageWithPosition { page_idx, bit_page })
-                                }
-                            }
-                            EitherOrBoth::Left(page_idx) => Some(BitPageWithPosition {
-                                page_idx,
-                                bit_page: BitPage::ones(),
-                            }),
-                            EitherOrBoth::Right(_) => {
-                                // this case should not arise
-                                None
-                            }
-                        }
-                    })
-                    .collect_vec();
-
-                BitPageVec::SparseWithZeroesHole(pages)
-            } else {
-                BitPageVec::SparseWithOnesHole(pages)
-            }
-        };
-
-        if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-            trace!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::result={:?}", result);
-        }
-
-        result
     }
 
     pub(crate) fn decode_pages<R>(buf: &mut R) -> anyhow::Result<Vec<BitPageWithPosition>>
