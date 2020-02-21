@@ -1,76 +1,122 @@
 // @author shailendra.sharma
-use std::cmp::min;
-
 use itertools::{EitherOrBoth, Itertools};
 use log::{debug, log_enabled, Level};
 
-use crate::bit_page_vec::BitPageWithPosition;
+use crate::bit_page::BitPageWithPosition;
+use crate::bit_page_vec::BitPageVecKind;
 use crate::{BitPage, BitPageVec};
 
 impl BitPageVec {
-    pub fn active_bits_count(&self, num_pages: usize) -> usize {
-        match self {
-            BitPageVec::AllZeroes => 0,
-            BitPageVec::AllOnes => num_pages * BitPage::MAX_BITS,
-            BitPageVec::SparseWithZeroesHole(pages) => {
+    pub fn active_bits_count(&self) -> usize {
+        match self.kind {
+            BitPageVecKind::AllZeroes => 0,
+            // bit pages are zero based
+            BitPageVecKind::AllOnes => self.last_bit_index.0 * BitPage::MAX_BITS + (self.last_bit_index.1),
+            BitPageVecKind::SparseWithZeroesHole => {
                 if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}, pages={:?}", pages.len(), pages);
+                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}", self.size());
                 }
 
-                BitPageVec::count_ones(pages) as usize
+                BitPageVec::count_ones(self.pages.as_ref()) as usize
             }
-            BitPageVec::SparseWithOnesHole(pages) => {
+            BitPageVecKind::SparseWithOnesHole => {
                 if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithOnesHole) #pages={}, pages={:?}", pages.len(), pages);
+                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithOnesHole) #pages={}", self.size());
                 }
 
-                BitPageVec::count_ones(pages) as usize + (num_pages - min(pages.len(), num_pages)) * BitPage::MAX_BITS
+                if let Some(ref pages) = self.pages {
+                    (0..self.last_bit_index.0)
+                        .merge_join_by(pages.iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
+                            page_1_idx.cmp(page_2_idx)
+                        })
+                        .map(move |either| match either {
+                            EitherOrBoth::Both(_, BitPageWithPosition { bit_page, .. }) => bit_page.count_ones() as usize,
+                            EitherOrBoth::Left(_) => BitPage::MAX_BITS,
+                            EitherOrBoth::Right(BitPageWithPosition { .. }) => 0,
+                        })
+                        .sum::<usize>()
+                        + self.last_bit_index.1
+                } else {
+                    (0..self.last_bit_index.0).map(|_| BitPage::MAX_BITS).sum::<usize>() + self.last_bit_index.1
+                }
             }
         }
     }
 
-    pub fn active_bits(&self, num_pages: usize) -> BitPageVecActiveBitsIterator {
-        match self {
-            BitPageVec::AllZeroes => BitPageVecActiveBitsIterator::None,
-            BitPageVec::AllOnes => {
-                let iter =
-                    (0..num_pages).flat_map(|page_idx| BitPage::active_bits(BitPage::ones()).map(move |bit_idx| (page_idx, bit_idx)));
+    pub fn active_bits(&self) -> BitPageVecActiveBitsIterator {
+        match self.kind {
+            BitPageVecKind::AllZeroes => BitPageVecActiveBitsIterator::None,
+            BitPageVecKind::AllOnes => {
+                let iter = (0..self.last_bit_index.0)
+                    .flat_map(|page_idx| BitPage::active_bits(BitPage::ones()).map(move |bit_idx| (page_idx, bit_idx)))
+                    .chain(
+                        BitPage::active_bits(BitPage::ones())
+                            .filter(move |bit_idx| bit_idx.lt(&self.last_bit_index.1))
+                            .map(move |bit_idx| (self.last_bit_index.0, bit_idx)),
+                    );
 
                 BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
             }
-            BitPageVec::SparseWithZeroesHole(pages) => {
-                let iter = pages.iter().flat_map(|BitPageWithPosition { page_idx, bit_page }| {
-                    BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx))
-                });
-
-                BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
-            }
-            BitPageVec::SparseWithOnesHole(pages) => {
-                let iter = (0..num_pages)
-                    .merge_join_by(pages.iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
-                        page_1_idx.cmp(page_2_idx)
-                    })
-                    .flat_map(|either| match either {
-                        EitherOrBoth::Both(_, BitPageWithPosition { page_idx, bit_page }) => {
-                            let iter: Box<dyn Iterator<Item = (usize, usize)>> =
-                                Box::new(BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
-                            iter
-                        }
-                        EitherOrBoth::Left(page_idx) => {
-                            let bit_page = BitPage::ones();
-                            let iter: Box<dyn Iterator<Item = (usize, usize)>> =
-                                Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (page_idx, bit_idx)));
-                            iter
-                        }
-                        EitherOrBoth::Right(BitPageWithPosition { page_idx, .. }) => {
-                            let bit_page = BitPage::zeroes();
-                            let iter: Box<dyn Iterator<Item = (usize, usize)>> =
-                                Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
-                            iter
-                        }
+            BitPageVecKind::SparseWithZeroesHole => {
+                if let Some(ref pages) = self.pages {
+                    let iter = pages.iter().flat_map(|BitPageWithPosition { page_idx, bit_page }| {
+                        BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx))
                     });
 
-                BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
+                    BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
+                } else {
+                    BitPageVecActiveBitsIterator::None
+                }
+            }
+            BitPageVecKind::SparseWithOnesHole => {
+                if let Some(ref pages) = self.pages {
+                    let iter = (0..=self.last_bit_index.0)
+                        .merge_join_by(pages.iter(), |page_1_idx, BitPageWithPosition { page_idx: page_2_idx, .. }| {
+                            page_1_idx.cmp(page_2_idx)
+                        })
+                        .flat_map(move |either| match either {
+                            EitherOrBoth::Both(_, BitPageWithPosition { page_idx, bit_page }) => {
+                                let iter: Box<dyn Iterator<Item = (usize, usize)>> =
+                                    Box::new(BitPage::active_bits(*bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
+                                iter
+                            }
+                            EitherOrBoth::Left(page_idx) => {
+                                if page_idx.eq(&self.last_bit_index.0) {
+                                    let bit_page = BitPage::ones();
+                                    let iter: Box<dyn Iterator<Item = (usize, usize)>> = Box::new(
+                                        BitPage::active_bits(bit_page)
+                                            .filter(move |bit_idx| bit_idx.lt(&self.last_bit_index.1))
+                                            .map(move |bit_idx| (page_idx, bit_idx)),
+                                    );
+                                    iter
+                                } else {
+                                    let bit_page = BitPage::ones();
+                                    let iter: Box<dyn Iterator<Item = (usize, usize)>> =
+                                        Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (page_idx, bit_idx)));
+                                    iter
+                                }
+                            }
+                            EitherOrBoth::Right(BitPageWithPosition { page_idx, .. }) => {
+                                let bit_page = BitPage::zeroes();
+                                let iter: Box<dyn Iterator<Item = (usize, usize)>> =
+                                    Box::new(BitPage::active_bits(bit_page).map(move |bit_idx| (*page_idx, bit_idx)));
+                                iter
+                            }
+                        });
+
+                    BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
+                } else {
+                    // duplicate of AllOnes case
+                    let iter = (0..self.last_bit_index.0)
+                        .flat_map(|page_idx| BitPage::active_bits(BitPage::ones()).map(move |bit_idx| (page_idx, bit_idx)))
+                        .chain(
+                            BitPage::active_bits(BitPage::ones())
+                                .filter(move |bit_idx| bit_idx.lt(&self.last_bit_index.1))
+                                .map(move |bit_idx| (self.last_bit_index.0, bit_idx)),
+                        );
+
+                    BitPageVecActiveBitsIterator::Some { iter: Box::new(iter) }
+                }
             }
         }
     }

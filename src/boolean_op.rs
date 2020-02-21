@@ -1,5 +1,6 @@
+use std::cmp::{max, min};
+
 // @author shailendra.sharma
-use itertools::Itertools;
 use log::{debug, log_enabled, Level};
 
 use crate::bit_page_vec_iter::BitPageVecIter;
@@ -55,29 +56,15 @@ impl<'a> BooleanOp<'a> {
         BooleanOp::Not(Box::new(op))
     }
 
-    pub fn evaluate(self, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
+    pub fn evaluate(self) -> BooleanOpResult<'a> {
         if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
             debug!(target: "bit_page_vec_log", "evaluate boolean_op={:?}", self);
         }
 
         let result = match self {
-            BooleanOp::And(ops) => {
-                // find max of start_page
-                // find min of end_page
-                // merge results
-                let leaves = ops.into_iter().map(|op| op.evaluate(start_page, end_page)).collect_vec();
-
-                Self::and_merge_leaves(leaves, start_page, end_page)
-            }
-            BooleanOp::Or(ops) => {
-                // find min of start_page
-                // find max of end_page
-                // merge results
-                let leaves = ops.into_iter().map(|op| op.evaluate(start_page, end_page)).collect_vec();
-
-                Self::or_merge_leaves(leaves, start_page, end_page)
-            }
-            BooleanOp::Not(op) => op.evaluate(start_page, end_page).not(start_page, end_page),
+            BooleanOp::And(ops) => ops.into_iter().map(|op| op.evaluate()).and_merge_leaves(),
+            BooleanOp::Or(ops) => ops.into_iter().map(|op| op.evaluate()).or_merge_leaves(),
+            BooleanOp::Not(op) => op.evaluate().not(),
             BooleanOp::BorrowedLeaf(leaf) => BooleanOpResult {
                 len: leaf.size(),
                 iter: leaf.iter(),
@@ -95,46 +82,91 @@ impl<'a> BooleanOp<'a> {
         result
     }
 
-    fn and_merge_leaves(mut leaves: Vec<BooleanOpResult<'a>>, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
+    // fn and_merge_leaves<I>(mut leaves: Vec<BooleanOpResult<'a>>) -> BooleanOpResult<'a>
+    // where
+    //     I: Iterator<Item = BooleanOp<'a>>,
+    // {
+    //     let mut merged_iter: Option<BitPageVecIter<'a>> = None;
+    //
+    //     let mut len = usize::max_value();
+    //     for leaf in leaves {
+    //         len = min(len, leaf.len);
+    //         match merged_iter {
+    //             None => merged_iter = Some(leaf.iter),
+    //             Some(first) => merged_iter = Some(BitPageVecIter::and(first, leaf.iter)),
+    //         }
+    //     }
+    //
+    //     BooleanOpResult {
+    //         len,
+    //         iter: merged_iter.unwrap(),
+    //     }
+    // }
+
+    // fn or_merge_leaves(mut leaves: Vec<BooleanOpResult<'a>>) -> BooleanOpResult<'a> {
+    //     let mut merged_iter: Option<BitPageVecIter<'a>> = None;
+    //
+    //     let mut len = 0;
+    //     for leaf in leaves.drain(..) {
+    //         len = max(len, leaf.len);
+    //         match merged_iter {
+    //             None => merged_iter = { Some(leaf.iter) },
+    //             Some(first) => merged_iter = Some(BitPageVecIter::or(first, leaf.iter)),
+    //         }
+    //     }
+    //
+    //     BooleanOpResult {
+    //         len,
+    //         iter: merged_iter.unwrap(),
+    //     }
+    // }
+}
+
+pub trait MergeLeavesIterator<'a>: Iterator<Item = BooleanOpResult<'a>> {
+    fn and_merge_leaves(self) -> BooleanOpResult<'a>
+    where
+        Self: Sized,
+    {
         let mut merged_iter: Option<BitPageVecIter<'a>> = None;
 
-        for leaf in leaves.drain(..) {
+        let mut len = usize::max_value();
+        for leaf in self.into_iter() {
+            len = min(len, leaf.len);
             match merged_iter {
-                None => {
-                    merged_iter = Some(leaf.iter);
-                }
-                Some(first) => {
-                    merged_iter = Some(BitPageVecIter::and(first, leaf.iter));
-                }
+                None => merged_iter = Some(leaf.iter),
+                Some(first) => merged_iter = Some(BitPageVecIter::and(first, leaf.iter)),
             }
         }
 
         BooleanOpResult {
-            len: (end_page - start_page),
+            len,
             iter: merged_iter.unwrap(),
         }
     }
 
-    fn or_merge_leaves(mut leaves: Vec<BooleanOpResult<'a>>, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
+    fn or_merge_leaves(self) -> BooleanOpResult<'a>
+    where
+        Self: Sized,
+    {
         let mut merged_iter: Option<BitPageVecIter<'a>> = None;
 
-        for leaf in leaves.drain(..) {
+        let mut len = 0;
+        for leaf in self.into_iter() {
+            len = max(len, leaf.len);
             match merged_iter {
-                None => {
-                    merged_iter = Some(leaf.iter);
-                }
-                Some(first) => {
-                    merged_iter = Some(BitPageVecIter::or(first, leaf.iter));
-                }
+                None => merged_iter = { Some(leaf.iter) },
+                Some(first) => merged_iter = Some(BitPageVecIter::or(first, leaf.iter)),
             }
         }
 
         BooleanOpResult {
-            len: (end_page - start_page),
+            len,
             iter: merged_iter.unwrap(),
         }
     }
 }
+
+impl<'a, T: ?Sized> MergeLeavesIterator<'a> for T where T: Iterator<Item = BooleanOpResult<'a>> {}
 
 impl<'a> BooleanOpResult<'a> {
     pub fn into_bit_page_vec(self) -> BitPageVec {
@@ -142,12 +174,9 @@ impl<'a> BooleanOpResult<'a> {
     }
 
     // how to do this in fluent pattern... looks like it is hard in Rust (to google later)
-    fn not(self, start_page: usize, end_page: usize) -> BooleanOpResult<'a> {
+    fn not(self) -> BooleanOpResult<'a> {
         let iter = self.iter.not();
 
-        BooleanOpResult {
-            len: (end_page - start_page),
-            iter,
-        }
+        BooleanOpResult { len: self.len, iter }
     }
 }

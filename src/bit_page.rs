@@ -1,4 +1,18 @@
+use std::fmt;
+
 // @author shailendra.sharma
+#[derive(Clone)]
+pub struct BitPageWithPosition {
+    pub(crate) page_idx: usize,
+    pub(crate) bit_page: u64,
+}
+
+impl fmt::Debug for BitPageWithPosition {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.page_idx)
+    }
+}
+
 pub struct BitPage;
 
 impl BitPage {

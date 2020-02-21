@@ -1,5 +1,5 @@
 // @author shailendra.sharma
-use std::cmp::Ordering;
+use std::cmp::{min, Ordering};
 use std::fmt;
 use std::iter::empty;
 use std::time::Instant;
@@ -7,23 +7,17 @@ use std::time::Instant;
 use itertools::{EitherOrBoth, Itertools};
 use log::{debug, log_enabled, trace, Level};
 
-use crate::bit_page_vec::BitPageWithPosition;
-use crate::{BitPage, BitPageVec};
+use crate::bit_page::BitPageWithPosition;
+use crate::bit_page_vec::BitPageVecKind;
+use crate::{BitPage, BitPageVec, DbBitPageVec};
 
 pub type PageItem = (usize, u64);
 pub type PageIterator<'a> = Box<dyn Iterator<Item = PageItem> + 'a>;
 
-#[derive(Copy, Clone, Debug)]
-pub enum IterKind {
-    AllZeroes,
-    SparseWithZeroesHole,
-    AllOnes,
-    SparseWithOnesHole,
-}
-
 pub struct BitPageVecIter<'a> {
-    kind: IterKind,
+    kind: BitPageVecKind,
     iter: PageIterator<'a>,
+    last_bit_index: (usize, usize),
 }
 
 impl<'a> fmt::Debug for BitPageVecIter<'a> {
@@ -33,11 +27,15 @@ impl<'a> fmt::Debug for BitPageVecIter<'a> {
 }
 
 impl<'a> BitPageVecIter<'a> {
-    pub fn new(kind: IterKind, iter: PageIterator) -> BitPageVecIter {
-        BitPageVecIter { kind, iter }
+    pub fn new(kind: BitPageVecKind, iter: PageIterator, last_bit_index: (usize, usize)) -> BitPageVecIter {
+        BitPageVecIter {
+            kind,
+            iter,
+            last_bit_index,
+        }
     }
 
-    pub fn kind(&self) -> &IterKind {
+    pub fn kind(&self) -> &BitPageVecKind {
         &self.kind
     }
 
@@ -50,8 +48,8 @@ impl<'a> BitPageVecIter<'a> {
         }
 
         let result = match self.kind {
-            IterKind::AllZeroes => BitPageVec::AllZeroes,
-            IterKind::SparseWithZeroesHole => {
+            BitPageVecKind::AllZeroes => BitPageVec::all_zeros(self.last_bit_index),
+            BitPageVecKind::SparseWithZeroesHole => {
                 let pages = self
                     .iter
                     .filter_map(|(page_idx, bit_page)| {
@@ -63,10 +61,10 @@ impl<'a> BitPageVecIter<'a> {
                     })
                     .collect_vec();
 
-                Self::compact_sparse_with_zeroes_hole(pages)
+                Self::compact_sparse_with_zeroes_hole(pages, self.last_bit_index)
             }
-            IterKind::AllOnes => BitPageVec::AllOnes,
-            IterKind::SparseWithOnesHole => {
+            BitPageVecKind::AllOnes => BitPageVec::all_ones(self.last_bit_index),
+            BitPageVecKind::SparseWithOnesHole => {
                 let pages = self
                     .iter
                     .filter_map(|(page_idx, bit_page)| {
@@ -78,7 +76,7 @@ impl<'a> BitPageVecIter<'a> {
                     })
                     .collect_vec();
 
-                Self::compact_sparse_with_ones_hole(pages)
+                Self::compact_sparse_with_ones_hole(pages, self.last_bit_index)
             }
         };
 
@@ -89,17 +87,28 @@ impl<'a> BitPageVecIter<'a> {
         result
     }
 
+    pub fn add(self, db_value: DbBitPageVec) -> BitPageVecIter<'a> {
+        let bit_page_vec = match db_value {
+            DbBitPageVec::AllZeroes => BitPageVec::all_zeros(self.last_bit_index),
+            DbBitPageVec::Sparse(pages) => BitPageVec::new(BitPageVecKind::SparseWithZeroesHole, Some(pages), self.last_bit_index),
+        };
+
+        BitPageVecIter::or(self, bit_page_vec.into_iter())
+    }
+
     pub fn not(self) -> BitPageVecIter<'a> {
         match self.kind {
-            IterKind::AllZeroes => BitPageVec::AllOnes.into_iter(),
-            IterKind::SparseWithZeroesHole => BitPageVecIter::new(
-                IterKind::SparseWithOnesHole,
+            BitPageVecKind::AllZeroes => BitPageVec::all_ones(self.last_bit_index).into_iter(),
+            BitPageVecKind::SparseWithZeroesHole => BitPageVecIter::new(
+                BitPageVecKind::SparseWithOnesHole,
                 Box::new(self.iter.map(|(page_idx, bit_page)| (page_idx, !bit_page))),
+                self.last_bit_index,
             ),
-            IterKind::AllOnes => BitPageVec::AllZeroes.into_iter(),
-            IterKind::SparseWithOnesHole => BitPageVecIter::new(
-                IterKind::SparseWithZeroesHole,
+            BitPageVecKind::AllOnes => BitPageVec::all_zeros(self.last_bit_index).into_iter(),
+            BitPageVecKind::SparseWithOnesHole => BitPageVecIter::new(
+                BitPageVecKind::SparseWithZeroesHole,
                 Box::new(self.iter.map(|(page_idx, bit_page)| (page_idx, !bit_page))),
+                self.last_bit_index,
             ),
         }
     }
@@ -110,10 +119,10 @@ impl<'a> BitPageVecIter<'a> {
         }
 
         let result = match first.kind {
-            IterKind::AllZeroes => second,
-            IterKind::SparseWithZeroesHole => match second.kind {
-                IterKind::AllZeroes => first,
-                IterKind::SparseWithZeroesHole => {
+            BitPageVecKind::AllZeroes => second,
+            BitPageVecKind::SparseWithZeroesHole => match second.kind {
+                BitPageVecKind::AllZeroes => first,
+                BitPageVecKind::SparseWithZeroesHole => {
                     // merge here... same type with zeroes hole
                     // 0 | 0 => 0
                     // some | 0 => some
@@ -128,27 +137,39 @@ impl<'a> BitPageVecIter<'a> {
                         EitherOrBoth::Left((idx, page)) | EitherOrBoth::Right((idx, page)) => (idx, page),
                     });
 
-                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithZeroesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
-                IterKind::AllOnes => second,
-                IterKind::SparseWithOnesHole => {
+                BitPageVecKind::AllOnes => second,
+                BitPageVecKind::SparseWithOnesHole => {
                     // merge here... cross type
                     let iter = first.iter.merge_join_by(second.iter, merge_cmp).filter_map(or_merge_cross_types);
-                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithOnesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
             },
-            IterKind::AllOnes => first,
-            IterKind::SparseWithOnesHole => match second.kind {
-                IterKind::AllZeroes => first,
-                IterKind::SparseWithZeroesHole => {
+            BitPageVecKind::AllOnes => first,
+            BitPageVecKind::SparseWithOnesHole => match second.kind {
+                BitPageVecKind::AllZeroes => first,
+                BitPageVecKind::SparseWithZeroesHole => {
                     // merge here... cross type
                     let iter = second.iter.merge_join_by(first.iter, merge_cmp).filter_map(or_merge_cross_types);
 
                     // return type would be SparseWithOnesHole
-                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithOnesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
-                IterKind::AllOnes => second,
-                IterKind::SparseWithOnesHole => {
+                BitPageVecKind::AllOnes => second,
+                BitPageVecKind::SparseWithOnesHole => {
                     // merge here... same type with ones hole
                     // 1 | 1 => 1
                     // some | 1 => 1
@@ -164,7 +185,11 @@ impl<'a> BitPageVecIter<'a> {
                         EitherOrBoth::Left(_) | EitherOrBoth::Right(_) => None,
                     });
 
-                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithOnesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
             },
         };
@@ -182,10 +207,10 @@ impl<'a> BitPageVecIter<'a> {
         }
 
         let result = match first.kind {
-            IterKind::AllZeroes => first, // essentially AllZeroes
-            IterKind::SparseWithZeroesHole => match second.kind {
-                IterKind::AllZeroes => second,
-                IterKind::SparseWithZeroesHole => {
+            BitPageVecKind::AllZeroes => first, // essentially AllZeroes
+            BitPageVecKind::SparseWithZeroesHole => match second.kind {
+                BitPageVecKind::AllZeroes => second,
+                BitPageVecKind::SparseWithZeroesHole => {
                     // merge here... same type (with zeroes hole)
                     let iter = first.iter.merge_join_by(second.iter, merge_cmp).filter_map(|either| match either {
                         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
@@ -200,30 +225,42 @@ impl<'a> BitPageVecIter<'a> {
                         EitherOrBoth::Left(_) | EitherOrBoth::Right(_) => None,
                     });
 
-                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithZeroesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
-                IterKind::AllOnes => first,
-                IterKind::SparseWithOnesHole => {
+                BitPageVecKind::AllOnes => first,
+                BitPageVecKind::SparseWithOnesHole => {
                     // merge here... cross type
                     let iter = first.iter.merge_join_by(second.iter, merge_cmp).filter_map(and_merge_cross_types);
 
                     // return type would be SparseWithZeroesHole
-                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithZeroesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
             },
-            IterKind::AllOnes => second,
-            IterKind::SparseWithOnesHole => match second.kind {
-                IterKind::AllZeroes => second, // essentially AllZeroes
-                IterKind::SparseWithZeroesHole => {
+            BitPageVecKind::AllOnes => second,
+            BitPageVecKind::SparseWithOnesHole => match second.kind {
+                BitPageVecKind::AllZeroes => second, // essentially AllZeroes
+                BitPageVecKind::SparseWithZeroesHole => {
                     // merge here... cross type
                     // reverse the merge join... so first is always sparse with zeroes and second is always sparse with ones
                     let iter = second.iter.merge_join_by(first.iter, merge_cmp).filter_map(and_merge_cross_types);
 
                     // return type would be SparseWithZeroesHole
-                    BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithZeroesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
-                IterKind::AllOnes => first,
-                IterKind::SparseWithOnesHole => {
+                BitPageVecKind::AllOnes => first,
+                BitPageVecKind::SparseWithOnesHole => {
                     // merge here... same type (with ones hole)
                     let iter = first.iter.merge_join_by(second.iter, merge_cmp).map(|either| match either {
                         EitherOrBoth::Both((idx_1, mut page_one), (_idx_2, page_two)) => {
@@ -233,7 +270,11 @@ impl<'a> BitPageVecIter<'a> {
                         }
                         EitherOrBoth::Left((idx, page)) | EitherOrBoth::Right((idx, page)) => (idx, page),
                     });
-                    BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
+                    BitPageVecIter::new(
+                        BitPageVecKind::SparseWithOnesHole,
+                        Box::new(iter),
+                        min_last_bit_index(first.last_bit_index, second.last_bit_index),
+                    )
                 }
             },
         };
@@ -245,15 +286,15 @@ impl<'a> BitPageVecIter<'a> {
         result
     }
 
-    pub(crate) fn compact_sparse_with_zeroes_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
+    pub(crate) fn compact_sparse_with_zeroes_hole(pages: Vec<BitPageWithPosition>, last_bit_index: (usize, usize)) -> BitPageVec {
         if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
             trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole - pages len={}", pages.len());
         }
 
         let result = if pages.is_empty() {
-            BitPageVec::AllZeroes
+            BitPageVec::all_zeros(last_bit_index)
         } else if pages.len() <= 10_000 {
-            BitPageVec::SparseWithZeroesHole(pages)
+            BitPageVec::new(BitPageVecKind::SparseWithZeroesHole, Some(pages), last_bit_index)
         } else {
             let start_page = pages[0].page_idx;
             let end_page = pages[pages.len() - 1].page_idx;
@@ -267,9 +308,11 @@ impl<'a> BitPageVecIter<'a> {
             // find start page, end page, and length
             // if length >= 75% of (end - start) page
             // and # of active bits >= 75% of active bits needed for fully packed 75%
-            if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 >= 0.75 * max_possible_length * 64.0 {
+            if actual_length >= 0.75 * max_possible_length
+                && BitPageVec::count_ones(Some(&pages)) as f64 >= 0.75 * max_possible_length * 64.0
+            {
                 if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-                    trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
+                    trace!(target: "bit_page_vec_log", "compact_sparse_with_zeroes_hole::compacting - ones={}", BitPageVec::count_ones(Some(&pages)));
                 }
 
                 // filter out all page with max value
@@ -299,9 +342,9 @@ impl<'a> BitPageVecIter<'a> {
                     })
                     .collect_vec();
 
-                BitPageVec::SparseWithOnesHole(pages)
+                BitPageVec::new(BitPageVecKind::SparseWithOnesHole, Some(pages), last_bit_index)
             } else {
-                BitPageVec::SparseWithZeroesHole(pages)
+                BitPageVec::new(BitPageVecKind::SparseWithZeroesHole, Some(pages), last_bit_index)
             }
         };
 
@@ -312,15 +355,15 @@ impl<'a> BitPageVecIter<'a> {
         result
     }
 
-    pub(crate) fn compact_sparse_with_ones_hole(pages: Vec<BitPageWithPosition>) -> BitPageVec {
+    pub(crate) fn compact_sparse_with_ones_hole(pages: Vec<BitPageWithPosition>, last_bit_index: (usize, usize)) -> BitPageVec {
         if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
             trace!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole - pages len={}", pages.len());
         }
 
         let result = if pages.is_empty() {
-            BitPageVec::AllOnes
+            BitPageVec::all_ones(last_bit_index)
         } else if pages.len() <= 10_000 {
-            BitPageVec::SparseWithOnesHole(pages)
+            BitPageVec::new(BitPageVecKind::SparseWithOnesHole, Some(pages), last_bit_index)
         } else {
             let start_page = pages[0].page_idx;
             let end_page = pages[pages.len() - 1].page_idx;
@@ -334,9 +377,11 @@ impl<'a> BitPageVecIter<'a> {
             // find start page, end page, and length
             // if length >= 75% of (end - start) page
             // and # of active bits <= 25% of active bits needed for fully packed 75%
-            if actual_length >= 0.75 * max_possible_length && BitPageVec::count_ones(&pages) as f64 <= 0.25 * max_possible_length * 64.0 {
+            if actual_length >= 0.75 * max_possible_length
+                && BitPageVec::count_ones(Some(&pages)) as f64 <= 0.25 * max_possible_length * 64.0
+            {
                 if log_enabled!(target: "bit_page_vec_log", Level::Trace) {
-                    debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::compacting - ones={}", BitPageVec::count_ones(&pages));
+                    debug!(target: "bit_page_vec_log", "compact_sparse_with_ones_hole::compacting - ones={}", BitPageVec::count_ones(Some(&pages)));
                 }
 
                 // filter out all page with max value
@@ -366,9 +411,9 @@ impl<'a> BitPageVecIter<'a> {
                     })
                     .collect_vec();
 
-                BitPageVec::SparseWithZeroesHole(pages)
+                BitPageVec::new(BitPageVecKind::SparseWithZeroesHole, Some(pages), last_bit_index)
             } else {
-                BitPageVec::SparseWithOnesHole(pages)
+                BitPageVec::new(BitPageVecKind::SparseWithOnesHole, Some(pages), last_bit_index)
             }
         };
 
@@ -382,52 +427,71 @@ impl<'a> BitPageVecIter<'a> {
 
 impl BitPageVec {
     pub fn iter(&self) -> BitPageVecIter {
-        match self {
-            BitPageVec::AllZeroes => {
+        match self.kind {
+            BitPageVecKind::AllZeroes => {
                 let iter = empty::<PageItem>();
-
-                BitPageVecIter::new(IterKind::AllZeroes, Box::new(iter))
+                BitPageVecIter::new(BitPageVecKind::AllZeroes, Box::new(iter), self.last_bit_index)
             }
-            BitPageVec::SparseWithZeroesHole(pages) => {
-                let iter = pages
-                    .iter()
-                    .map(|BitPageWithPosition { page_idx, bit_page }| (*page_idx, *bit_page));
-                BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
+            BitPageVecKind::SparseWithZeroesHole => {
+                if let Some(ref pages) = self.pages {
+                    let iter = pages
+                        .iter()
+                        .map(|BitPageWithPosition { page_idx, bit_page }| (*page_idx, *bit_page));
+                    BitPageVecIter::new(BitPageVecKind::SparseWithZeroesHole, Box::new(iter), self.last_bit_index)
+                } else {
+                    let iter = empty::<PageItem>();
+                    BitPageVecIter::new(BitPageVecKind::AllZeroes, Box::new(iter), self.last_bit_index)
+                }
             }
-            BitPageVec::AllOnes => {
+            BitPageVecKind::AllOnes => {
                 let iter = empty::<PageItem>();
-                BitPageVecIter::new(IterKind::AllOnes, Box::new(iter))
+                BitPageVecIter::new(BitPageVecKind::AllOnes, Box::new(iter), self.last_bit_index)
             }
-            BitPageVec::SparseWithOnesHole(pages) => {
-                let iter = pages
-                    .iter()
-                    .map(|BitPageWithPosition { page_idx, bit_page }| (*page_idx, *bit_page));
-                BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
+            BitPageVecKind::SparseWithOnesHole => {
+                if let Some(ref pages) = self.pages {
+                    let iter = pages
+                        .iter()
+                        .map(|BitPageWithPosition { page_idx, bit_page }| (*page_idx, *bit_page));
+                    BitPageVecIter::new(BitPageVecKind::SparseWithOnesHole, Box::new(iter), self.last_bit_index)
+                } else {
+                    let iter = empty::<PageItem>();
+                    BitPageVecIter::new(BitPageVecKind::AllOnes, Box::new(iter), self.last_bit_index)
+                }
             }
         }
     }
 
     pub fn into_iter<'a>(self) -> BitPageVecIter<'a> {
-        match self {
-            BitPageVec::AllZeroes => {
+        match self.kind {
+            BitPageVecKind::AllZeroes => {
                 let iter = empty::<PageItem>();
-                BitPageVecIter::new(IterKind::AllZeroes, Box::new(iter))
+                BitPageVecIter::new(BitPageVecKind::AllZeroes, Box::new(iter), self.last_bit_index)
             }
-            BitPageVec::SparseWithZeroesHole(pages) => {
-                let iter = pages
-                    .into_iter()
-                    .map(|BitPageWithPosition { page_idx, bit_page }| (page_idx, bit_page));
-                BitPageVecIter::new(IterKind::SparseWithZeroesHole, Box::new(iter))
+            BitPageVecKind::SparseWithZeroesHole => {
+                if let Some(pages) = self.pages {
+                    let iter = pages
+                        .into_iter()
+                        .map(|BitPageWithPosition { page_idx, bit_page }| (page_idx, bit_page));
+                    BitPageVecIter::new(BitPageVecKind::SparseWithZeroesHole, Box::new(iter), self.last_bit_index)
+                } else {
+                    let iter = empty::<PageItem>();
+                    BitPageVecIter::new(BitPageVecKind::AllZeroes, Box::new(iter), self.last_bit_index)
+                }
             }
-            BitPageVec::AllOnes => {
+            BitPageVecKind::AllOnes => {
                 let iter = empty::<PageItem>();
-                BitPageVecIter::new(IterKind::AllOnes, Box::new(iter))
+                BitPageVecIter::new(BitPageVecKind::AllOnes, Box::new(iter), self.last_bit_index)
             }
-            BitPageVec::SparseWithOnesHole(pages) => {
-                let iter = pages
-                    .into_iter()
-                    .map(|BitPageWithPosition { page_idx, bit_page }| (page_idx, bit_page));
-                BitPageVecIter::new(IterKind::SparseWithOnesHole, Box::new(iter))
+            BitPageVecKind::SparseWithOnesHole => {
+                if let Some(pages) = self.pages {
+                    let iter = pages
+                        .into_iter()
+                        .map(|BitPageWithPosition { page_idx, bit_page }| (page_idx, bit_page));
+                    BitPageVecIter::new(BitPageVecKind::SparseWithOnesHole, Box::new(iter), self.last_bit_index)
+                } else {
+                    let iter = empty::<PageItem>();
+                    BitPageVecIter::new(BitPageVecKind::AllOnes, Box::new(iter), self.last_bit_index)
+                }
             }
         }
     }
@@ -481,4 +545,8 @@ pub(crate) fn and_merge_cross_types(either: EitherOrBoth<PageItem, PageItem>) ->
         }
         EitherOrBoth::Right(_) => None, // 0 & some
     }
+}
+
+pub(crate) fn min_last_bit_index(first: (usize, usize), second: (usize, usize)) -> (usize, usize) {
+    min(first, second)
 }

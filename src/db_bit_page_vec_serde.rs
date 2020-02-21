@@ -1,37 +1,26 @@
 // @shailendra.sharma
 use bytes::{Buf, BufMut};
 
-use crate::bit_page_vec::BitPageWithPosition;
-use crate::{BitPage, BitPageVec};
+use crate::bit_page::BitPageWithPosition;
+use crate::{BitPage, DbBitPageVec};
 
-impl BitPageVec {
-    pub fn encode<W>(&self, buf: &mut W) -> anyhow::Result<()>
+impl DbBitPageVec {
+    pub fn encode<W>(&self, buf: &mut W)
     where
         W: BufMut,
     {
         match self {
-            BitPageVec::AllZeroes => {
+            DbBitPageVec::AllZeroes => {
                 // write type
                 buf.put_u8(0);
             }
-            BitPageVec::SparseWithZeroesHole(pages) => {
+            DbBitPageVec::Sparse(pages) => {
                 // write type
                 buf.put_u8(1);
 
                 Self::encode_pages(pages, buf);
             }
-            _ => anyhow::bail!("Not a valid BitPageVec type for encoding={:?}", self),
-            // BitPageVec::AllOnes => {
-            //     buf.put_u8(2);
-            // }
-            // BitPageVec::SparseWithOnesHole(pages) => {
-            //     buf.put_u8(3);
-            //
-            //     Self::encode_pages(pages, buf);
-            // }
         }
-
-        Ok(())
     }
 
     fn encode_pages<W>(pages: &[BitPageWithPosition], buf: &mut W)
@@ -49,7 +38,7 @@ impl BitPageVec {
         }
     }
 
-    pub fn decode<R>(buf: &mut R) -> anyhow::Result<BitPageVec>
+    pub fn decode<R>(buf: &mut R) -> anyhow::Result<DbBitPageVec>
     where
         R: Buf,
     {
@@ -57,19 +46,13 @@ impl BitPageVec {
 
         let t = buf.get_u8();
         match t {
-            0 => Ok(BitPageVec::AllZeroes),
+            0 => Ok(DbBitPageVec::AllZeroes),
             1 => {
                 let pages = Self::decode_pages(buf)?;
 
-                Ok(BitPageVec::SparseWithZeroesHole(pages))
+                Ok(DbBitPageVec::Sparse(pages))
             }
-            // 2 => Ok(BitPageVec::AllOnes),
-            // 3 => {
-            //     let pages = Self::decode_pages(buf)?;
-            //
-            //     Ok(Self::compact_sparse_with_ones_hole(pages))
-            // }
-            _ => anyhow::bail!("Not a valid BitPageVec type={} for decoding", t),
+            _ => anyhow::bail!("Not a valid DbBitPageVec type={} for decoding", t),
         }
     }
 
