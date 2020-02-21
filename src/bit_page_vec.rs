@@ -39,9 +39,6 @@ impl BitPageVec {
 
     #[inline]
     pub fn all_ones() -> BitPageVec {
-        //        let mut bit_page = BitPageVec::AllZeroes;
-        //        bit_page.not(num_pages);
-        //        bit_page
         BitPageVec::AllOnes
     }
 
