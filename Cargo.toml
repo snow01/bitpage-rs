@@ -11,3 +11,10 @@ arrayvec = "0.5.1"
 anyhow = "1.0.26"
 bytes = "0.5.4"
 log = "0.4.8"
+stacker = "0.1.6"
+
+[profile.dev]
+panic = "unwind"
+
+[profile.release]
+panic = "unwind"

@@ -1,10 +1,9 @@
 use std::cmp::{max, min};
 
-// @author shailendra.sharma
-use log::{debug, log_enabled, Level};
-
 use crate::bit_page_vec_iter::BitPageVecIter;
 use crate::BitPageVec;
+
+// @author shailendra.sharma
 
 #[derive(Clone, Debug)]
 pub enum BooleanOp<'a> {
@@ -57,9 +56,9 @@ impl<'a> BooleanOp<'a> {
     }
 
     pub fn evaluate(self) -> BooleanOpResult<'a> {
-        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "evaluate boolean_op={:?}", self);
-        }
+        // if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+        //     debug!(target: "bit_page_vec_log", "evaluate boolean_op={:?}", self);
+        // }
 
         let result = match self {
             BooleanOp::And(ops) => ops.into_iter().map(|op| op.evaluate()).and_merge_leaves(),
@@ -75,9 +74,9 @@ impl<'a> BooleanOp<'a> {
             },
         };
 
-        if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-            debug!(target: "bit_page_vec_log", "evaluate boolean_op result={:?}", result);
-        }
+        // if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+        //     debug!(target: "bit_page_vec_log", "evaluate boolean_op result={:?}", result);
+        // }
 
         result
     }

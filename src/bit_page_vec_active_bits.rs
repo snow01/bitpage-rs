@@ -1,10 +1,9 @@
-// @author shailendra.sharma
 use itertools::{EitherOrBoth, Itertools};
-use log::{debug, log_enabled, Level};
 
+use crate::{BitPage, BitPageVec};
+// @author shailendra.sharma
 use crate::bit_page::{zero_masks, BitPageWithPosition};
 use crate::bit_page_vec::BitPageVecKind;
-use crate::{BitPage, BitPageVec};
 
 impl BitPageVec {
     pub fn active_bits_count(&self) -> usize {
@@ -13,9 +12,9 @@ impl BitPageVec {
             // bit pages are zero based
             BitPageVecKind::AllOnes => self.last_bit_index.0 * BitPage::MAX_BITS + (self.last_bit_index.1),
             BitPageVecKind::SparseWithZeroesHole => {
-                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}", self.size());
-                }
+                // if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                //     debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithZeroesHole) #pages={}", self.size());
+                // }
 
                 if let Some(ref pages) = self.pages {
                     let last_page = self.last_bit_index.0;
@@ -37,9 +36,9 @@ impl BitPageVec {
                 }
             }
             BitPageVecKind::SparseWithOnesHole => {
-                if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
-                    debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithOnesHole) #pages={}", self.size());
-                }
+                // if log_enabled!(target: "bit_page_vec_log", Level::Debug) {
+                //     debug!(target: "bit_page_vec_log", "active_bits_count(kind=SparseWithOnesHole) #pages={}", self.size());
+                // }
 
                 if let Some(ref pages) = self.pages {
                     (0..self.last_bit_index.0)
