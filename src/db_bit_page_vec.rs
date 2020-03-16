@@ -79,16 +79,14 @@ impl DbBitPageVec {
     }
 
     #[inline]
-    pub fn get_bit_page_in_binary_format(&self, page_idx: usize) -> Option<String> {
+    pub fn get_bit_page(&self, page_idx: usize) -> Option<&u64> {
         match self {
             DbBitPageVec::AllZeroes => None,
             DbBitPageVec::Sparse(pages) => {
                 // do binary search for page_idx...
                 if let Ok(matching_index) = pages.binary_search_by(|probe| probe.page_idx.cmp(&page_idx)) {
-                    // clear bit at the matching index
                     let bit_page = &pages[matching_index].bit_page;
-                    let bit_page_in_binary = format!("{:b}", bit_page);
-                    return Some(bit_page_in_binary);
+                    return Some(bit_page);
                 }
                 None
             }
