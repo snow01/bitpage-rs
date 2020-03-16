@@ -79,6 +79,21 @@ impl DbBitPageVec {
     }
 
     #[inline]
+    pub fn get_bit_page(&self, page_idx: usize) -> Option<&u64> {
+        match self {
+            DbBitPageVec::AllZeroes => None,
+            DbBitPageVec::Sparse(pages) => {
+                // do binary search for page_idx...
+                if let Ok(matching_index) = pages.binary_search_by(|probe| probe.page_idx.cmp(&page_idx)) {
+                    let bit_page = &pages[matching_index].bit_page;
+                    return Some(bit_page);
+                }
+                None
+            }
+        }
+    }
+
+    #[inline]
     pub fn is_bit_set(&self, page_idx: usize, bit_idx: usize) -> bool {
         match self {
             DbBitPageVec::AllZeroes => false,
